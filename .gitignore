@@ -1,0 +1,140 @@
+# ============================================
+# ARCHIVOS QUE SÍ DEBEN IGNORARSE (NO SUBIR)
+# ============================================
+
+# 1. ENTORNOS VIRTUALES Y PYTHON
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+pyvenv.cfg
+pip-selfcheck.json
+Pipfile
+Pipfile.lock
+poetry.lock
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 2. VARIABLES DE ENTORNO Y SECRETOS
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+secrets.json
+credentials.json
+service-account-key.json
+
+# 3. ARCHIVOS DE SISTEMA Y TEMPORALES
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# 4. IDE Y EDITORES
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.launch
+.pydevproject
+
+# 5. SELENIUM, CHROME Y DEBUG
+chromedriver*
+chromedriver.exe
+geckodriver
+.selenium_cache/
+debug_screenshots/
+debug_images/
+debug_capturas/
+html_debug/
+json_debug/
+*.png  # ¡CUIDADO! Solo si son temporales
+*.jpg
+*.jpeg
+
+# 6. CACHÉ Y ARCHIVOS GENERADOS
+generated_images/
+generated_images_completas/
+generated_tickets/
+image_cache/
+.cache/
+.nox/
+.coverage
+.coverage.*
+*,cover
+.hypothesis/
+.pytest_cache/
+
+# 7. BASE DE DATOS Y BACKUPS
+*.db
+*.sqlite
+*.sqlite3
+*.mdb
+*.backup
+*.bak
+dump.sql
+backup/
+
+# 8. DOCKER
+docker-compose.override.yml
+.env.docker
+
+# 9. ARCHIVOS DE USUARIO ESPECÍFICO
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pid
+*.manifest
+*.spec
+
+# 10. LOGS (pero mantén la carpeta logs/)
+logs/*.log
+!logs/.gitkeep  # Mantiene la carpeta pero no los logs
+
+# ============================================
+# ARCHIVOS QUE SÍ DEBEN SUBIRSE
+# ============================================
+# !bool/                    # SI quieres subir bool/
+# !diagnostic.py           # SI quieres subir diagnostic.py
+# !diagnostic_os.py        # SI quieres subir diagnostic_os.py
+# !test_connection.py      # SI quieres subir test_connection.py
+# !test_network.py         # SI quieres subir test_network.py
+# !check_imports.py        # SI quieres subir check_imports.py

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factura KFC - {{ invoice_number }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+            color: #333;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            position: relative;
+        }
+
+        /* Encabezado de empresa */
+        .company-header {
+            text-align: center;
+            border-bottom: 2px solid #e63946;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .company-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .company-details {
+            font-size: 10px;
+            color: #666;
+            line-height: 1.3;
+        }
+
+        .company-ruc {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        /* Información de la factura */
+        .invoice-header {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .invoice-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #e63946;
+            margin-bottom: 5px;
+        }
+
+        .invoice-number {
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .authorization {
+            font-family: 'Courier New', monospace;
+            font-size: 9px;
+            margin: 10px 0;
+            padding: 8px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+
+        /* Datos del local */
+        .store-info {
+            display: flex;
+            justify-content: space-between;
+            margin: 15px 0;
+            padding: 10px;
+            background: #e9f7ef;
+            border-radius: 5px;
+        }
+
+        .store-detail {
+            flex: 1;
+        }
+
+        .store-label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .store-value {
+            color: #555;
+        }
+
+        /* Información del cliente */
+        .client-info {
+            margin: 15px 0;
+            padding: 12px;
+            background: #fff3cd;
+            border-radius: 5px;
+            border-left: 4px solid #ffc107;
+        }
+
+        .client-row {
+            display: flex;
+            margin-bottom: 5px;
+        }
+
+        .client-label {
+            min-width: 100px;
+            font-weight: bold;
+        }
+
+        /* Tabla de productos */
+        .products-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 11px;
+        }
+
+        .products-table th {
+            background: #e63946;
+            color: white;
+            padding: 8px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .products-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .products-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .quantity {
+            text-align: center;
+            width: 50px;
+        }
+
+        .description {
+            width: 300px;
+        }
+
+        .price {
+            text-align: right;
+            width: 80px;
+        }
+
+        .total-row {
+            text-align: right;
+            font-weight: bold;
+        }
+
+        /* Totales */
+        .totals {
+            margin-top: 20px;
+            text-align: right;
+            padding-top: 15px;
+            border-top: 2px solid #ddd;
+        }
+
+        .total-line {
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .total-label {
+            min-width: 150px;
+            text-align: right;
+            padding-right: 10px;
+        }
+
+        .total-value {
+            min-width: 100px;
+            text-align: right;
+            font-weight: bold;
+        }
+
+        .grand-total {
+            font-size: 16px;
+            color: #e63946;
+            font-weight: bold;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+
+        /* Forma de pago */
+        .payment {
+            margin: 15px 0;
+            padding: 10px;
+            background: #e7f3ff;
+            border-radius: 5px;
+            border-left: 4px solid #0d6efd;
+        }
+
+        .payment-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 10px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .warning {
+            color: #e63946;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .url {
+            color: #0d6efd;
+            word-break: break-all;
+            margin: 5px 0;
+        }
+
+        /* Timestamp */
+        .timestamp {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 9px;
+            color: #999;
+        }
+
+        /* Responsive */
+        @media print {
+            body {
+                width: 100%;
+                padding: 0;
+            }
+
+            .container {
+                border: none;
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="timestamp">Generado: {{ generated_date }}</div>
+
+        <!-- Encabezado de empresa -->
+        <div class="company-header">
+            <div class="company-name">INT FOOD SERVICES CORP SA</div>
+            <div class="company-details">
+                <div class="company-ruc">RUC: 1791415132001</div>
+                <div>GRAN CONTRIBUYENTE</div>
+                <div>RESOL. Nº : NAC-GCFO10C21-00000900-E</div>
+                <div>CONTRIBUYENTE ESPECIAL - RESOL. Nº : 155</div>
+                <div>MATRIZ: PICHINCHA / QUITO / INAQUITO / COREA 126 Y AV. AMAZONAS</div>
+                <div>SUCURSAL: AV. ELOY ALFARO Y DE LAS ANONAS</div>
+                <div>Obligado a llevar contabilidad : SI</div>
+            </div>
+        </div>
+
+        <!-- Título de factura -->
+        <div class="invoice-header">
+            <div class="invoice-title">FACTURA RIDE</div>
+
+            <div class="authorization">
+                Nº Autorización / Clave de Acceso:<br>
+                28012026011791415132001226708000000<br>
+                13064126153319
+            </div>
+        </div>
+
+        <!-- Datos del local -->
+        <div class="store-info">
+            <div class="store-detail">
+                <div class="store-label">LOCAL:</div>
+                <div class="store-value">{{ store_name }}</div>
+            </div>
+            <div class="store-detail">
+                <div class="store-label">TRANS:</div>
+                <div class="store-value">{{ transaction or '000017405' }}</div>
+            </div>
+            <div class="store-detail">
+                <div class="store-label">FECHA:</div>
+                <div class="store-value">{{ date }}</div>
+            </div>
+            <div class="store-detail">
+                <div class="store-label">Nº COMPROBANTE:</div>
+                <div class="store-value">{{ invoice_number or '267-080-000001306' }}</div>
+            </div>
+        </div>
+
+        <!-- Información del pedido -->
+        <div class="client-info">
+            <div style="font-weight: bold; margin-bottom: 8px; color: #e63946;">
+                App Express - Llevar
+            </div>
+
+            <div class="client-row">
+                <div class="client-label">ORDEN #:</div>
+                <div><strong>{{ order_number or '77' }}</strong></div>
+            </div>
+            <div class="client-row">
+                <div class="client-label">FAC:</div>
+                <div>{{ cfac_id or 'K190F000017405' }}</div>
+            </div>
+            <div class="client-row">
+                <div class="client-label">AMBIENTE:</div>
+                <div>PRODUCCIÓN</div>
+            </div>
+            <div class="client-row">
+                <div class="client-label">EMISIÓN:</div>
+                <div>EMISIÓN NORMAL</div>
+            </div>
+            <div class="client-row">
+                <div class="client-label">CAJERO/A:</div>
+                <div>{{ cashier or 'K190KIOSKO1' }}</div>
+            </div>
+        </div>
+
+        <!-- Información del cliente -->
+        <div class="client-info" style="background: #f8f9fa; border-left-color: #6c757d;">
+            <div class="client-row">
+                <div class="client-label">CLIENTE:</div>
+                <div>{{ client_name }}</div>
+            </div>
+            <div class="client-row">
+                <div class="client-label">RUC/CI:</div>
+                <div>{{ client_ruc }}</div>
+            </div>
+            {% if client_phone %}
+            <div class="client-row">
+                <div class="client-label">TEL:</div>
+                <div>{{ client_phone }}</div>
+            </div>
+            {% endif %}
+            {% if client_email %}
+            <div class="client-row">
+                <div class="client-label">E-MAIL:</div>
+                <div>{{ client_email }}</div>
+            </div>
+            {% endif %}
+            {% if client_address %}
+            <div class="client-row">
+                <div class="client-label">DIRECCIÓN:</div>
+                <div>{{ client_address }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Tabla de productos -->
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th class="quantity">CNT</th>
+                    <th class="description">DESCRIPCIÓN</th>
+                    <th class="price">P.UNI</th>
+                    <th class="price">VALOR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in details %}
+                <tr>
+                    <td class="quantity">{{ item.quantity }}</td>
+                    <td class="description">{{ item.product_name }}</td>
+                    <td class="price">${{ "%.4f"|format(item.unit_price) }}</td>
+                    <td class="price">${{ "%.4f"|format(item.subtotal) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Totales -->
+        <div class="totals">
+            <div class="total-line">
+                <div class="total-label">Subtotal Sin Impuestos :</div>
+                <div class="total-value">$ {{ "%.4f"|format(subtotal) }}</div>
+            </div>
+            <div class="total-line">
+                <div class="total-label">Descuento :</div>
+                <div class="total-value">$ 0.0000</div>
+            </div>
+            <div class="total-line">
+                <div class="total-label">Subtotal 15% :</div>
+                <div class="total-value">$ {{ "%.4f"|format(subtotal) }}</div>
+            </div>
+            <div class="total-line">
+                <div class="total-label">Iva 15% :</div>
+                <div class="total-value">$ {{ "%.4f"|format(iva) }}</div>
+            </div>
+            <div class="total-line grand-total">
+                <div class="total-label">VALOR TOTAL :</div>
+                <div class="total-value">$ {{ "%.4f"|format(total) }}</div>
+            </div>
+        </div>
+
+        <!-- Forma de pago -->
+        <div class="payment">
+            <div class="payment-label">Forma de pago:</div>
+            <div>{{ payment_method or 'MASTERCARD - TAR. CRED.' }} : $ {{ "%.2f"|format(total) }}</div>
+        </div>
+
+        <!-- Footer con información importante -->
+        <div class="footer">
+            <div class="warning">
+                Estimado cliente: Por favor verifique los datos de su factura, únicamente se aceptarán cambios el mismo día de emisión.
+            </div>
+            <div>
+                Para obtener su factura electrónica ingrese a:
+            </div>
+            <div class="url">
+                https://facturasrestaurantes.corlasosa.com
+            </div>
+            <div>
+                (Usuario: CI/RUC, Clave: CI/RUC) o a la página web del SRI con la Clave de Acceso:
+            </div>
+            <div style="font-family: 'Courier New', monospace; font-size: 9px; margin: 5px 0;">
+                28012026011791415132001226708000000<br>
+                13064126153319
+            </div>
+            <div style="margin-top: 10px; color: #999;">
+                Sistema KFC - Generado automáticamente
+            </div>
+        </div>
+    </div>
+</body>
+</html>

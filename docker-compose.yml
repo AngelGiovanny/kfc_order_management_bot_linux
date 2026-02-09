@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  kfc-bot:
+    build: .
+    container_name: kfc_order_bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - LOG_LEVEL=INFO
+      - TZ=America/Lima
+    volumes:
+      - ./logs:/app/logs
+      - ./reports_data:/app/reports_data
+      - ./static:/app/static
+    networks:
+      - kfc-network
+
+  # Servicio para desarrollo con hot-reload
+  kfc-bot-dev:
+    build: .
+    container_name: kfc_order_bot_dev
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - LOG_LEVEL=DEBUG
+      - TZ=America/Lima
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./reports_data:/app/reports_data
+    command: >
+      sh -c "pip install -r requirements.txt && python main.py"
+    networks:
+      - kfc-network
+
+networks:
+  kfc-network:
+    driver: bridge

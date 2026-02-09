@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comanda KFC - {{ transaction }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        body {
+            width: 580px;
+            margin: 0 auto;
+            padding: 10px;
+            background: white;
+            color: #000;
+            font-size: 13px;
+            line-height: 1.2;
+        }
+
+        .comanda-container {
+            border: 2px solid #000;
+            padding: 15px;
+            position: relative;
+        }
+
+        /* Línea superior */
+        .top-line {
+            border-top: 2px solid #000;
+            margin: 5px 0;
+        }
+
+        /* Encabezado */
+        .header {
+            text-align: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #000;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            margin-bottom: 3px;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 3px 0;
+            text-transform: uppercase;
+        }
+
+        /* Información de transacción */
+        .transaction-info {
+            margin: 8px 0;
+            padding: 5px;
+            border: 1px solid #000;
+        }
+
+        .info-line {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+
+        .info-label {
+            font-weight: bold;
+        }
+
+        /* Separador */
+        .separator {
+            text-align: center;
+            margin: 5px 0;
+            font-weight: bold;
+            letter-spacing: 5px;
+        }
+
+        /* Cabecera de items */
+        .items-header {
+            text-align: center;
+            font-weight: bold;
+            margin: 5px 0;
+            padding: 3px;
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+        }
+
+        /* Items */
+        .items-container {
+            margin: 8px 0;
+        }
+
+        .item {
+            margin: 3px 0;
+            padding-left: 5px;
+        }
+
+        .item-quantity {
+            font-weight: bold;
+            display: inline-block;
+            width: 20px;
+        }
+
+        .urgent-item {
+            color: #e63946;
+            font-weight: bold;
+        }
+
+        .modifier {
+            padding-left: 20px;
+            font-style: italic;
+            margin: 2px 0;
+        }
+
+        /* Información de preparación */
+        .prep-info {
+            margin: 10px 0;
+            padding: 8px;
+            border: 1px dashed #000;
+            text-align: center;
+        }
+
+        .prep-time {
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .priority {
+            margin-top: 5px;
+            font-weight: bold;
+        }
+
+        .priority-high {
+            color: #e63946;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0.7; }
+        }
+
+        /* Notas */
+        .notes {
+            margin: 10px 0;
+            padding: 5px;
+            border-top: 1px dotted #000;
+            font-size: 11px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            margin-top: 15px;
+            padding-top: 8px;
+            border-top: 1px solid #000;
+            font-size: 10px;
+            color: #666;
+        }
+
+        .barcode {
+            font-family: 'Barcode', monospace;
+            font-size: 30px;
+            letter-spacing: 3px;
+            margin: 5px 0;
+        }
+
+        .timestamp {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            font-size: 9px;
+            color: #999;
+        }
+
+        /* Etiqueta de urgencia */
+        .urgent-label {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #e63946;
+            color: white;
+            padding: 3px 15px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        /* Responsive para impresión */
+        @media print {
+            body {
+                width: 100%;
+                padding: 0;
+            }
+
+            .comanda-container {
+                border: 1px solid #000;
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="comanda-container">
+        {% if priority == 'HIGH' or priority == 'URGENTE' %}
+        <div class="urgent-label">URGENTE</div>
+        {% endif %}
+
+        <div class="timestamp">{{ generated_date }}</div>
+
+        <div class="top-line"></div>
+
+        <!-- Encabezado -->
+        <div class="header">
+            <div class="logo">KFC</div>
+            <div class="title">COMANDA DE COCINA</div>
+            <div>TIENDA: {{ store_code }}</div>
+        </div>
+
+        <!-- Información de transacción -->
+        <div class="transaction-info">
+            <div class="info-line">
+                <div class="info-label">TRANSACIÓN #:</div>
+                <div>{{ transaction }}</div>
+            </div>
+            <div class="info-line">
+                <div class="info-label"># Cuenta:</div>
+                <div>{{ account }}</div>
+            </div>
+            <div class="info-line">
+                <div class="info-label">ORDEN:</div>
+                <div>{{ order_description }}</div>
+            </div>
+            <div class="info-line">
+                <div class="info-label">Cajero/a:</div>
+                <div>{{ cashier }}</div>
+            </div>
+            <div class="info-line">
+                <div class="info-label">Fecha:</div>
+                <div>{{ date }}</div>
+            </div>
+        </div>
+
+        <div class="separator">---</div>
+
+        <!-- Cabecera de items -->
+        <div class="items-header">
+            CANT. DESCRIPCIÓN
+        </div>
+
+        <div class="separator">---</div>
+
+        <!-- Items -->
+        <div class="items-container">
+            {% for item in items %}
+            {% if item.startswith('- ') %}
+            <div class="modifier">{{ item }}</div>
+            {% else %}
+            <div class="item {% if 'URGENTE' in item %}urgent-item{% endif %}">
+                <span class="item-quantity">
+                    {% if item.split(' ')|length > 0 %}
+                        {{ item.split(' ')[0] }}
+                    {% else %}
+                        1
+                    {% endif %}
+                </span>
+                {{ item[item.find(' ') + 1:] if item.find(' ') > 0 else item }}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="separator">---</div>
+
+        <!-- Información de preparación -->
+        <div class="prep-info">
+            <div class="prep-time">
+                ⏰ TIEMPO ESTIMADO: {{ prep_time }}
+            </div>
+            <div class="priority {% if priority == 'HIGH' or priority == 'URGENTE' %}priority-high{% endif %}">
+                PRIORIDAD: {{ priority }}
+            </div>
+        </div>
+
+        <!-- Notas especiales -->
+        {% if notes %}
+        <div class="notes">
+            <div style="font-weight: bold;">NOTAS:</div>
+            <div>{{ notes }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="barcode">
+                {{ transaction }}{{ account }}
+            </div>
+            <div>----------------------------------------</div>
+            <div>COMANDA GENERADA AUTOMÁTICAMENTE</div>
+            <div>SISTEMA KFC - VERSIÓN {{ current_year }}</div>
+            <div>NO VÁLIDO COMO COMPROBANTE FISCAL</div>
+        </div>
+    </div>
+</body>
+</html>
