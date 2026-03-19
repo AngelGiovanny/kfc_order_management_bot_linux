@@ -1,5 +1,5 @@
 """
-Servicio de impresión con 3 intentos - CONFIGURACIÓN EXACTA
+Servicio de impresión con 3 intentos - CONFIGURACIÓN EXACTA - VERSIÓN SIMPLE CON MARCA DE AGUA
 Caja1 = .21, Caja2 = .22, Linea = .21
 Domi/LineaDomi = .15, .78 o .2 (depende del equipo)
 """
@@ -138,6 +138,42 @@ class PrintService3Attempts:
 
         return id_impresora
 
+    def _add_watermark_simple(self, json_data: dict) -> dict:
+        """
+        Agrega marca de agua SIMPLE "RE-IMPRESIÓN DE DOCUMENTO" como texto visible
+        en el campo donde el sistema de impresión lo mostrará en el fondo
+        """
+        try:
+            # Crear copia
+            watermarked_json = json_data.copy()
+
+            # 1. Campo específico para marca de agua de fondo
+            # Este campo lo debe leer tu sistema de impresión
+            watermarked_json["marcaAguaFondo"] = "RE-IMPRESIÓN DE DOCUMENTO"
+
+            # 2. Campo adicional para estilos (si tu sistema lo soporta)
+            watermarked_json["marcaAguaEstilo"] = {
+                "texto": "RE-IMPRESIÓN DE DOCUMENTO",
+                "tamaño": "grande",
+                "color": "gris",
+                "opacidad": "0.3",
+                "posicion": "centro",
+                "rotacion": "45grados"
+            }
+
+            # 3. Agregar como texto visible también (por si acaso)
+            if "observaciones" in watermarked_json:
+                watermarked_json["observaciones"] = f"RE-IMPRESIÓN DE DOCUMENTO\n{watermarked_json['observaciones']}"
+            else:
+                watermarked_json["observaciones"] = "RE-IMPRESIÓN DE DOCUMENTO"
+
+            logger.info("✅ Marca de agua 'RE-IMPRESIÓN DE DOCUMENTO' agregada")
+            return watermarked_json
+
+        except Exception as e:
+            logger.error(f"Error agregando marca de agua: {e}")
+            return json_data
+
     async def print_document(self, bot, chat_id: int, doc_type: str, document_id: str) -> Dict[str, Any]:
         """Proceso principal de impresión con 3 intentos"""
 
@@ -163,8 +199,8 @@ class PrintService3Attempts:
 
             logger.info(f"Iniciando impresión para {doc_type.upper()} {document_id} en tienda {self.store_code}")
 
-            # Intento 1: Usar JSON existente de Canal_Movimiento
-            attempt1 = await self._attempt_1_use_json(doc_type, document_id)
+            # Intento 1: Usar JSON existente de Canal_Movimiento (CORREGIDO con imp_fecha)
+            attempt1 = await self._attempt_1_corregido(doc_type, document_id)
             result["attempts"].append(attempt1)
 
             if attempt1["success"]:
@@ -179,8 +215,8 @@ class PrintService3Attempts:
                 )
                 return result
 
-            # Intento 2: Generar nuevo JSON con SP
-            attempt2 = await self._attempt_2_use_sp(doc_type, document_id)
+            # Intento 2: Generar nuevo JSON con SP (CORREGIDO con parámetro @cfac)
+            attempt2 = await self._attempt_2_corregido(doc_type, document_id)
             result["attempts"].append(attempt2)
 
             if attempt2["success"]:
@@ -196,7 +232,7 @@ class PrintService3Attempts:
                 return result
 
             # Intento 3: Intento de emergencia
-            attempt3 = await self._attempt_3_emergency(doc_type, document_id)
+            attempt3 = await self._attempt_3_emergency_corregido(doc_type, document_id)
             result["attempts"].append(attempt3)
 
             if attempt3["success"]:
@@ -230,8 +266,8 @@ class PrintService3Attempts:
 
         return result
 
-    async def _attempt_1_use_json(self, doc_type: str, document_id: str) -> Dict[str, Any]:
-        """Intento 1: Usar JSON existente de Canal_Movimiento"""
+    async def _attempt_1_corregido(self, doc_type: str, document_id: str) -> Dict[str, Any]:
+        """Intento 1 CORREGIDO: Usar JSON existente de Canal_Movimiento con imp_fecha"""
         connection = None
         cursor = None
 
@@ -244,12 +280,15 @@ class PrintService3Attempts:
 
             cursor = connection.cursor()
 
-            # Buscar JSON en Canal_Movimiento
+            # CONSULTA CORREGIDA: Usar imp_fecha en lugar de Fecha
             query = """
-                SELECT TOP 1 Canal_MovimientoVarchar1 
+                SELECT TOP 1 
+                    Canal_MovimientoVarchar1,
+                    imp_impresora,
+                    imp_ip_estacion
                 FROM Canal_Movimiento 
                 WHERE Canal_MovimientoVarchar3 = ?
-                ORDER BY Fecha DESC
+                ORDER BY imp_fecha DESC
             """
 
             cursor.execute(query, (document_id,))
@@ -258,7 +297,7 @@ class PrintService3Attempts:
             if not row or not row[0]:
                 return {"success": False, "message": "No se encontró JSON", "attempt": 1}
 
-            json_str = row[0]
+            json_str, impresora_db, ip_estacion = row
 
             if not json_str or json_str.strip() == "":
                 return {"success": False, "message": "JSON vacío", "attempt": 1}
@@ -269,18 +308,28 @@ class PrintService3Attempts:
             except json.JSONDecodeError:
                 return {"success": False, "message": "JSON inválido", "attempt": 1}
 
-            # Obtener idImpresora del JSON
-            id_impresora = json_data.get("idImpresora")
+            # Obtener idImpresora del JSON o de la BD
+            id_impresora = json_data.get("idImpresora") or impresora_db
             if not id_impresora:
                 return {"success": False, "message": "JSON sin idImpresora", "attempt": 1}
 
+            # AGREGAR MARCA DE AGUA SIMPLE
+            json_data_con_agua = self._add_watermark_simple(json_data)
+
             # Obtener IPs basadas en idImpresora
             ips_to_try = self._get_ips_from_idimpresora(id_impresora)
+
+            # Si tenemos IP de la BD, agregarla como primera opción
+            if ip_estacion and ip_estacion != "0.0.0.0":
+                ip_estacion = self._clean_ip(ip_estacion)
+                if ip_estacion not in ips_to_try:
+                    ips_to_try.insert(0, ip_estacion)
+
             logger.info(f"idImpresora: {id_impresora} → IPs a probar: {ips_to_try}")
 
             # Probar cada IP
             for ip in ips_to_try:
-                success = await self._send_print_request(ip, json_data)
+                success = await self._send_print_request_corregido(ip, json_data_con_agua)
                 if success:
                     estacion = self._get_estacion_name(id_impresora, ip)
                     message = (
@@ -289,7 +338,8 @@ class PrintService3Attempts:
                         f"• Documento: {document_id}\n"
                         f"• Estación: *{estacion}*\n"
                         f"• IP: {ip}\n"
-                        f"• idImpresora: *{id_impresora}*"
+                        f"• idImpresora: *{id_impresora}*\n"
+                        f"• 📝 *Incluye marca de agua: RE-IMPRESIÓN DE DOCUMENTO*"
                     )
                     return {
                         "success": True,
@@ -310,8 +360,8 @@ class PrintService3Attempts:
             if connection:
                 connection.close()
 
-    async def _attempt_2_use_sp(self, doc_type: str, document_id: str) -> Dict[str, Any]:
-        """Intento 2: Generar JSON con Stored Procedure"""
+    async def _attempt_2_corregido(self, doc_type: str, document_id: str) -> Dict[str, Any]:
+        """Intento 2 CORREGIDO: Generar JSON con SP usando parámetro @cfac"""
         connection = None
         cursor = None
 
@@ -324,14 +374,13 @@ class PrintService3Attempts:
 
             cursor = connection.cursor()
 
-            # Ejecutar SP
+            # EJECUTAR SP CON PARÁMETRO @cfac (según el error que viste)
             sql = f"""
                 SET NOCOUNT ON;
                 DECLARE @jsonResult NVARCHAR(MAX);
                 
                 EXEC [facturacion].[IAE_TipoFacturacion] 
-                    @pDocumento = N'{document_id}',
-                    @pServerAddress = N'10.101.{self.store_number}.21',
+                    @cfac = N'{document_id}',
                     @pJsonOutput = @jsonResult OUTPUT;
                 
                 SELECT @jsonResult AS JsonData;
@@ -361,13 +410,16 @@ class PrintService3Attempts:
                 if not id_impresora:
                     return {"success": False, "message": "SP sin idImpresora", "attempt": 2}
 
+                # AGREGAR MARCA DE AGUA SIMPLE
+                json_data_con_agua = self._add_watermark_simple(json_data)
+
                 # Obtener IPs basadas en idImpresora
                 ips_to_try = self._get_ips_from_idimpresora(id_impresora)
                 logger.info(f"SP idImpresora: {id_impresora} → IPs: {ips_to_try}")
 
                 # Probar cada IP
                 for ip in ips_to_try:
-                    success = await self._send_print_request(ip, json_data)
+                    success = await self._send_print_request_corregido(ip, json_data_con_agua)
                     if success:
                         estacion = self._get_estacion_name(id_impresora, ip)
                         message = (
@@ -376,7 +428,8 @@ class PrintService3Attempts:
                             f"• Documento: {document_id}\n"
                             f"• Estación: *{estacion}*\n"
                             f"• IP: {ip}\n"
-                            f"• idImpresora: *{id_impresora}*"
+                            f"• idImpresora: *{id_impresora}*\n"
+                            f"• 📝 *Incluye marca de agua: RE-IMPRESIÓN DE DOCUMENTO*"
                         )
                         return {
                             "success": True,
@@ -390,7 +443,8 @@ class PrintService3Attempts:
 
             except Exception as sp_error:
                 logger.error(f"Error SP: {sp_error}")
-                return {"success": False, "message": f"Error SP: {str(sp_error)[:50]}", "attempt": 2}
+                # Intentar versión alternativa del SP si falla
+                return {"success": False, "message": f"Error en SP: {str(sp_error)[:50]}", "attempt": 2}
 
         except Exception as e:
             logger.error(f"Error intento 2: {e}")
@@ -401,18 +455,24 @@ class PrintService3Attempts:
             if connection:
                 connection.close()
 
-    async def _attempt_3_emergency(self, doc_type: str, document_id: str) -> Dict[str, Any]:
-        """Intento 3: Emergencia - Deducir y probar todas las IPs"""
+    async def _attempt_3_emergency_corregido(self, doc_type: str, document_id: str) -> Dict[str, Any]:
+        """Intento 3: Emergencia - Deducir y probar todas las IPs con JSON que funcione"""
         try:
             logger.info(f"[Intento 3] Emergencia para {document_id}")
 
             # Deducir idImpresora basado en tipo
             if doc_type == "comanda":
                 id_impresora = "linea"
-            elif "F" in document_id or "N" in document_id:
+                tipo_impresion = "orden"
+            elif "F" in document_id:
                 id_impresora = "caja1"
+                tipo_impresion = "factura"
+            elif "N" in document_id:
+                id_impresora = "caja1"
+                tipo_impresion = "nota_credito"
             else:
                 id_impresora = "caja1"
+                tipo_impresion = "documento"
 
             # Obtener IPs basadas en idImpresora deducido
             ips_to_try = self._get_ips_from_idimpresora(id_impresora)
@@ -428,19 +488,23 @@ class PrintService3Attempts:
 
             logger.info(f"Emergencia - IPs a probar: {all_ips}")
 
-            # Crear JSON básico
+            # Crear JSON MÍNIMO que probablemente funcione con la API
             json_data = {
                 "numeroImpresiones": 1,
-                "tipo": doc_type,
+                "tipo": tipo_impresion,
                 "idImpresora": id_impresora,
-                "idPlantilla": "",
-                "data": {"documento": document_id, "tienda": self.store_number},
-                "registros": []
+                "idPlantilla": "default",
+                "data": {
+                    "documento": document_id,
+                    "tienda": self.store_number,
+                    "observaciones": "RE-IMPRESIÓN DE DOCUMENTO"  # Marca de agua aquí
+                },
+                "marcaAguaFondo": "RE-IMPRESIÓN DE DOCUMENTO"  # Marca de agua en fondo
             }
 
             # Probar todas las IPs
             for ip in all_ips:
-                success = await self._send_print_request(ip, json_data)
+                success = await self._send_print_request_corregido(ip, json_data)
                 if success:
                     # Determinar qué tipo de estación es por la IP
                     octet = ip.split('.')[-1]
@@ -459,7 +523,8 @@ class PrintService3Attempts:
                         f"• Documento: {document_id}\n"
                         f"• Estación: *{estacion}*\n"
                         f"• IP: {ip}\n"
-                        f"• idImpresora deducido: *{id_impresora}*"
+                        f"• idImpresora deducido: *{id_impresora}*\n"
+                        f"• 📝 *Incluye marca de agua: RE-IMPRESIÓN DE DOCUMENTO*"
                     )
                     return {
                         "success": True,
@@ -475,8 +540,8 @@ class PrintService3Attempts:
             logger.error(f"Error intento 3: {e}")
             return {"success": False, "message": f"Error: {str(e)[:50]}", "attempt": 3}
 
-    async def _send_print_request(self, ip_address: str, json_data: dict) -> bool:
-        """Envía solicitud de impresión a la API"""
+    async def _send_print_request_corregido(self, ip_address: str, json_data: dict) -> bool:
+        """Envía solicitud de impresión a la API - VERSIÓN CORREGIDA"""
         try:
             ip_address = self._clean_ip(ip_address)
             url = f"http://{ip_address}:5000/api/ImpresionTickets/Impresion"
@@ -486,7 +551,15 @@ class PrintService3Attempts:
                 'Accept': 'application/json'
             }
 
-            logger.info(f"Enviando a {url} (idImpresora: {json_data.get('idImpresora', 'N/A')})")
+            # Log informativo
+            id_impresora = json_data.get("idImpresora", "N/A")
+            tiene_marca_agua = "marcaAguaFondo" in json_data
+            logger.info(f"Enviando a {url} (idImpresora: {id_impresora}, Marca agua: {tiene_marca_agua})")
+
+            # DEBUG: Mostrar JSON que se enviará (solo en desarrollo)
+            if logger.level <= logging.DEBUG:
+                json_str = json.dumps(json_data, ensure_ascii=False, indent=2)
+                logger.debug(f"JSON a enviar:\n{json_str[:1000]}...")
 
             response = requests.post(
                 url,
@@ -498,9 +571,16 @@ class PrintService3Attempts:
 
             if response.status_code == 200:
                 logger.info(f"✅ Impresión exitosa en {ip_address}")
+                # Intentar mostrar respuesta de la API
+                try:
+                    resp_json = response.json()
+                    logger.debug(f"Respuesta API: {resp_json}")
+                except:
+                    logger.debug(f"Respuesta texto: {response.text[:200]}")
                 return True
             else:
-                logger.warning(f"❌ Error {response.status_code} en {ip_address}")
+                error_msg = response.text[:200] if response.text else "Sin mensaje de error"
+                logger.warning(f"❌ Error {response.status_code} en {ip_address}: {error_msg}")
                 return False
 
         except requests.exceptions.Timeout:
@@ -510,5 +590,5 @@ class PrintService3Attempts:
             logger.warning(f"Conexión rechazada en {ip_address}")
             return False
         except Exception as e:
-            logger.error(f"Error en {ip_address}: {e}")
-            return False
+            logger.error(f"Epyrror en {ip_address}: {e}")
+            return Falseoyth

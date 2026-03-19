@@ -174,6 +174,24 @@ SEARCH_ALL_ORDERS_QUERY = """
     ORDER BY fecha DESC
 """
 
+# ============================================================================
+# QUERY PARA AUDITORÍA POR RANGO
+# ============================================================================
+AUDITORIA_RANGO_QUERY = """
+    SELECT 
+        e.codigo_app,
+        e.estado,
+        e.fecha,
+        m.nombres,
+        m.empresa_motorolo,
+        m.documento
+    FROM Estado_Pedido_App e WITH(NOLOCK)
+    LEFT JOIN Motorolo m WITH(NOLOCK) ON e.IDMotorolo = m.IDMotorolo
+    WHERE CAST(e.fecha AS DATE) BETWEEN ? AND ?
+      AND CAST(e.fecha AS TIME) BETWEEN ? AND ?
+    ORDER BY e.fecha ASC
+"""
+
 
 class QueryManager:
     """Gestor de consultas"""
@@ -227,3 +245,141 @@ class QueryManager:
     def get_search_all_orders_query():
         """Para buscar en todas las tablas - 3 marcadores"""
         return SEARCH_ALL_ORDERS_QUERY
+
+    @staticmethod
+    def get_auditoria_rango_query():
+        """Para auditoría por rango de fechas y horas - 4 marcadores"""
+        return AUDITORIA_RANGO_QUERY
+
+
+# ============================================================================
+# FUNCIÓN PARA CONSULTAR POR RANGO (VERSIÓN ORIGINAL)
+# ============================================================================
+async def consultar_pedidos_por_rango(store_code: str, fecha_inicio, fecha_fin, hora_inicio, hora_fin):
+    """
+    Ejecuta consulta de auditoría por rango de fechas y horas
+    Retorna lista de diccionarios con los resultados
+    """
+    try:
+        from config.database import db_manager
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Obtener conexión
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            logger.error(f"No se pudo conectar a la tienda {store_code}")
+            return []
+
+        cursor = connection.cursor()
+        try:
+            # Ejecutar consulta
+            query = AUDITORIA_RANGO_QUERY
+
+            # Convertir fechas y horas a string para la consulta
+            fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d') if hasattr(fecha_inicio, 'strftime') else str(fecha_inicio)
+            fecha_fin_str = fecha_fin.strftime('%Y-%m-%d') if hasattr(fecha_fin, 'strftime') else str(fecha_fin)
+            hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hasattr(hora_inicio, 'strftime') else str(hora_inicio)
+            hora_fin_str = hora_fin.strftime('%H:%M:%S') if hasattr(hora_fin, 'strftime') else str(hora_fin)
+
+            cursor.execute(query, (fecha_inicio_str, fecha_fin_str, hora_inicio_str, hora_fin_str))
+
+            # Obtener resultados
+            results = cursor.fetchall()
+
+            # Convertir a lista de diccionarios
+            datos = []
+            for row in results:
+                datos.append({
+                    'codigo_app': row[0],
+                    'estado': row[1],
+                    'fecha': row[2],
+                    'nombres': row[3],
+                    'empresa_motorolo': row[4],
+                    'documento': row[5]
+                })
+
+            logger.info(f"Consulta por rango: {len(datos)} registros encontrados")
+            return datos
+
+        except Exception as e:
+            logger.error(f"Error ejecutando consulta por rango: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    except Exception as e:
+        logger.error(f"Error en consultar_pedidos_por_rango: {e}")
+        return []
+
+
+# ============================================================================
+# NUEVA FUNCIÓN: CONSULTA POR RANGO SIMPLE (SIN CONVERSIÓN COMPLEJA)
+# ============================================================================
+async def consultar_pedidos_por_rango_simple(store_code: str, fecha_inicio, fecha_fin, hora_inicio, hora_fin):
+    """
+    Ejecuta consulta de auditoría por rango de fechas y horas - VERSIÓN SIMPLIFICADA
+    Retorna lista de diccionarios con los resultados
+    """
+    try:
+        from config.database import db_manager
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Obtener conexión
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            logger.error(f"No se pudo conectar a la tienda {store_code}")
+            return []
+
+        cursor = connection.cursor()
+        try:
+            # Consulta SQL directa SIN DECLARE
+            query = """
+                SELECT 
+                    e.codigo_app,
+                    e.estado,
+                    e.fecha,
+                    m.nombres,
+                    m.empresa_motorolo,
+                    m.documento
+                FROM Estado_Pedido_App e WITH(NOLOCK)
+                LEFT JOIN Motorolo m WITH(NOLOCK) ON e.IDMotorolo = m.IDMotorolo
+                WHERE CAST(e.fecha AS DATE) BETWEEN ? AND ?
+                  AND CAST(e.fecha AS TIME) BETWEEN ? AND ?
+                ORDER BY e.fecha ASC
+            """
+
+            # Convertir fechas a string
+            fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d') if hasattr(fecha_inicio, 'strftime') else str(fecha_inicio)
+            fecha_fin_str = fecha_fin.strftime('%Y-%m-%d') if hasattr(fecha_fin, 'strftime') else str(fecha_fin)
+
+            cursor.execute(query, (fecha_inicio_str, fecha_fin_str, hora_inicio, hora_fin))
+
+            # Obtener resultados
+            results = cursor.fetchall()
+
+            # Convertir a lista de diccionarios
+            datos = []
+            for row in results:
+                datos.append({
+                    'codigo_app': row[0],
+                    'estado': row[1],
+                    'fecha': row[2],
+                    'nombres': row[3],
+                    'empresa_motorolo': row[4],
+                    'documento': row[5]
+                })
+
+            logger.info(f"Consulta por rango simple: {len(datos)} registros encontrados")
+            return datos
+
+        except Exception as e:
+            logger.error(f"Error ejecutando consulta por rango simple: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    except Exception as e:
+        logger.error(f"Error en consultar_pedidos_por_rango_simple: {e}")
+        return []

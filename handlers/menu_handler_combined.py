@@ -1,12 +1,12 @@
 """
 Handlers combinados para el menú - Versión telebot - SIN BOTÓN 4-PASOS
-VERSIÓN MEJORADA CON ESTRATEGIA DUAL LINUX/WINDOWS
+VERSIÓN MEJORADA CON ESTRATEGIA DUAL LINUX/WINDOWS - CON PERÍODOS PREDEFINIDOS
 """
 
 import asyncio
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 import requests
@@ -33,7 +33,7 @@ def validate_store_code(store_code: str) -> bool:
 
 
 async def show_main_menu(bot, chat_id: int, store_code: str):
-    """Muestra el menú principal completo - SIN BOTÓN FLUJO 4-PASOS"""
+    """Muestra el menú principal completo - AHORA CON AUDITORÍA POR RANGO"""
 
     menu_text = "📋 *SELECCIONE UNA OPCIÓN:*"
 
@@ -51,17 +51,16 @@ async def show_main_menu(bot, chat_id: int, store_code: str):
         types.KeyboardButton("🍗 Comanda"),
         types.KeyboardButton("🔗 Código asociado"),
         types.KeyboardButton("🖨️ Re-Impresión"),
-        types.KeyboardButton("🔧 Diagnóstico"),
+        types.KeyboardButton("📅 Auditoría por Rango"),
         types.KeyboardButton("🔄 Cambiar tienda"),
         types.KeyboardButton("❌ Salir")
     ]
 
-    # Organizar botones
-    markup.row(buttons[0], buttons[1])  # Verificar, Auditoría
-    markup.row(buttons[2], buttons[3])  # Factura, Nota crédito
-    markup.row(buttons[4], buttons[5])  # Comanda, Código asociado
-    markup.row(buttons[6], buttons[7])  # Re-Impresión, Diagnóstico
-    markup.row(buttons[8], buttons[9])  # Cambiar tienda, Salir
+    markup.row(buttons[0], buttons[1])
+    markup.row(buttons[2], buttons[3])
+    markup.row(buttons[4], buttons[5])
+    markup.row(buttons[6], buttons[7])
+    markup.row(buttons[8], buttons[9])
 
     try:
         await bot.send_message(
@@ -84,7 +83,7 @@ async def show_action_buttons(bot, chat_id: int, store_code: str):
 
     buttons = [
         types.KeyboardButton("🔍 Nueva consulta"),
-        types.KeyboardButton("🔧 Diagnóstico"),
+        types.KeyboardButton("📅 Auditoría por Rango"),
         types.KeyboardButton("🏠 Menú principal"),
         types.KeyboardButton("🔄 Cambiar tienda"),
         types.KeyboardButton("❌ Salir")
@@ -103,11 +102,10 @@ async def show_action_buttons(bot, chat_id: int, store_code: str):
 
 
 async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str, is_credit_note: bool = False):
-    """Maneja generación de imagen de factura o nota de crédito - VERSIÓN MEJORADA"""
+    """Maneja generación de imagen de factura o nota de crédito"""
     try:
         doc_type = "Nota de Crédito" if is_credit_note else "Factura"
 
-        # Mensaje inicial
         await bot.send_message(
             chat_id=chat_id,
             text=f"🖼️ *Generando {doc_type} {cfac_id}...*\n\n"
@@ -116,7 +114,6 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
             parse_mode="Markdown"
         )
 
-        # Registrar uso
         usage_logger.log_action(
             user_id=None,
             username="",
@@ -125,7 +122,6 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
             details=f"CFAC_ID: {cfac_id}"
         )
 
-        # Usar el image_service mejorado
         from core.image_service import image_service
 
         if not image_service.is_available():
@@ -140,7 +136,6 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
             return
 
         try:
-            # Generar imagen
             if is_credit_note:
                 image_bytes = await image_service.generate_invoice_image(
                     store_code=store_code,
@@ -155,7 +150,6 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
                 )
 
             if image_bytes:
-                # Enviar imagen generada
                 caption = (
                     f"📄 *{doc_type} {cfac_id}*\n"
                     f"🏪 Tienda: {store_code}\n"
@@ -170,9 +164,7 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
                         parse_mode="Markdown"
                     )
                     logger.info(f"✅ {doc_type} generada exitosamente para {cfac_id}")
-
                 except Exception as send_error:
-                    # Si hay error enviando la foto, enviar mensaje de éxito
                     logger.error(f"Error enviando foto: {send_error}")
                     await bot.send_message(
                         chat_id=chat_id,
@@ -183,7 +175,6 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
                         parse_mode="Markdown"
                     )
             else:
-                # Intentar obtener datos básicos como fallback
                 await _show_invoice_fallback(bot, chat_id, store_code, cfac_id, doc_type)
 
         except Exception as img_error:
@@ -204,7 +195,7 @@ async def handle_invoice_image(bot, chat_id: int, store_code: str, cfac_id: str,
 async def _show_invoice_fallback(bot, chat_id: int, store_code: str,
                                cfac_id: str, doc_type: str,
                                error: Optional[Exception] = None):
-    """Muestra datos de factura como fallback cuando no se puede generar imagen"""
+    """Muestra datos de factura como fallback"""
     try:
         from config.database import db_manager
 
@@ -285,9 +276,8 @@ async def _show_invoice_fallback(bot, chat_id: int, store_code: str,
 
 
 async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
-    """Maneja generación de comanda - VERSIÓN MEJORADA"""
+    """Maneja generación de comanda"""
     try:
-        # Mensaje inicial
         await bot.send_message(
             chat_id=chat_id,
             text=f"🍗 *Buscando comanda para factura {cfac_id}...*\n\n"
@@ -296,7 +286,6 @@ async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
             parse_mode="Markdown"
         )
 
-        # Registrar uso
         usage_logger.log_action(
             user_id=None,
             username="",
@@ -305,7 +294,6 @@ async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
             details=f"CFAC_ID: {cfac_id}"
         )
 
-        # Usar el image_service mejorado
         from core.image_service import image_service
 
         if not image_service.is_available():
@@ -319,14 +307,12 @@ async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
             return
 
         try:
-            # Generar imagen de comanda
             image_bytes = await image_service.generate_comanda_image(
                 store_code=store_code,
                 invoice_id=cfac_id
             )
 
             if image_bytes:
-                # Enviar imagen generada
                 caption = (
                     f"🍗 *Comanda para factura {cfac_id}*\n"
                     f"🏪 Tienda: {store_code}\n"
@@ -341,7 +327,6 @@ async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
                         parse_mode="Markdown"
                     )
                     logger.info(f"✅ Comanda generada exitosamente para factura {cfac_id}")
-
                 except Exception as send_error:
                     logger.error(f"Error enviando foto: {send_error}")
                     await bot.send_message(
@@ -353,7 +338,6 @@ async def handle_comanda(bot, chat_id: int, store_code: str, cfac_id: str):
                         parse_mode="Markdown"
                     )
             else:
-                # Intentar obtener datos básicos como fallback
                 await _show_comanda_fallback(bot, chat_id, store_code, cfac_id)
 
         except Exception as img_error:
@@ -396,7 +380,6 @@ async def _show_comanda_fallback(bot, chat_id: int, store_code: str,
 
         cursor = connection.cursor()
         try:
-            # Buscar comanda asociada
             cursor.execute("""
                 SELECT TOP 1 
                     COALESCE(o.odp_id, o.id, o.numero_orden) as comanda_id,
@@ -421,7 +404,6 @@ async def _show_comanda_fallback(bot, chat_id: int, store_code: str,
                     f"⚠️ *Nota:* La imagen no pudo generarse."
                 )
 
-                # Obtener items de la comanda
                 cursor.execute("""
                     SELECT TOP 5 
                         COALESCE(producto_desc, 'Producto') as producto,
@@ -435,7 +417,6 @@ async def _show_comanda_fallback(bot, chat_id: int, store_code: str,
                     response += "\n\n📋 *Items:*"
                     for idx, item in enumerate(items, 1):
                         response += f"\n{idx}. {item[0]} (x{item[1]})"
-
             else:
                 response = (
                     f"❌ *Comanda no encontrada*\n\n"
@@ -470,11 +451,510 @@ async def _show_comanda_fallback(bot, chat_id: int, store_code: str,
 
 
 # ============================================================================
-# HANDLERS EXISTENTES (SOLO CAMBIO EN handle_order_verification)
+# AUDITORÍA POR RANGO - VERSIÓN CORREGIDA (CON STORE_CODE EN CALLBACKS)
+# ============================================================================
+
+async def handle_auditoria_rango(bot, chat_id: int, store_code: str):
+    """Maneja auditoría por rango de fechas"""
+    try:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+
+        # Incluir store_code en cada callback
+        buttons = [
+            types.InlineKeyboardButton("📅 Día actual", callback_data=f"rango:hoy:{store_code}"),
+            types.InlineKeyboardButton("⬅️ Día de ayer", callback_data=f"rango:ayer:{store_code}"),
+            types.InlineKeyboardButton("2️⃣ Últimos 2 días", callback_data=f"rango:2dias:{store_code}"),
+            types.InlineKeyboardButton("3️⃣ Últimos 3 días", callback_data=f"rango:3dias:{store_code}"),
+            types.InlineKeyboardButton("🔍 Selección manual", callback_data=f"rango:manual:{store_code}"),
+            types.InlineKeyboardButton("❌ Cancelar", callback_data=f"rango:cancelar:{store_code}")
+        ]
+
+        markup.row(buttons[0], buttons[1])
+        markup.row(buttons[2], buttons[3])
+        markup.row(buttons[4], buttons[5])
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"📊 *AUDITORÍA POR RANGO - {store_code}*\n\n"
+                 f"Seleccione el rango de fechas:",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        logger.error(f"Error en auditoría por rango: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error iniciando auditoría:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+        await show_action_buttons(bot, chat_id, store_code)
+
+
+async def handle_rango_seleccion(bot, call, store_code: str, user_sessions):
+    """Maneja la selección de rango de fechas - CON store_code desde callback"""
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    user_id = call.from_user.id
+
+    # Extraer store_code del callback si es necesario
+    parts = call.data.split(':')
+    if len(parts) >= 3:
+        store_code = parts[2]
+
+    fecha_fin = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if call.data.startswith('rango:hoy'):
+        fecha_inicio = fecha_fin
+        await mostrar_opciones_periodo(bot, chat_id, store_code, fecha_inicio, fecha_fin, user_sessions, user_id)
+
+    elif call.data.startswith('rango:ayer'):
+        fecha_inicio = fecha_fin - timedelta(days=1)
+        fecha_fin = fecha_inicio
+        await mostrar_opciones_periodo(bot, chat_id, store_code, fecha_inicio, fecha_fin, user_sessions, user_id)
+
+    elif call.data.startswith('rango:2dias'):
+        fecha_inicio = fecha_fin - timedelta(days=2)
+        await mostrar_opciones_periodo(bot, chat_id, store_code, fecha_inicio, fecha_fin, user_sessions, user_id)
+
+    elif call.data.startswith('rango:3dias'):
+        fecha_inicio = fecha_fin - timedelta(days=3)
+        await mostrar_opciones_periodo(bot, chat_id, store_code, fecha_inicio, fecha_fin, user_sessions, user_id)
+
+    elif call.data.startswith('rango:manual'):
+        if user_id in user_sessions:
+            user_sessions[user_id]['state'] = 'WAITING_RANGO_FECHA_INICIO'
+            user_sessions[user_id]['rango_store'] = store_code
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"📅 *Ingrese la fecha de inicio* (formato YYYY-MM-DD):\n\n"
+                 f"Ejemplo: `2026-03-19`",
+            parse_mode="Markdown"
+        )
+
+    elif call.data.startswith('rango:cancelar'):
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ *Operación cancelada*",
+            parse_mode="Markdown"
+        )
+        await show_action_buttons(bot, chat_id, store_code)
+
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except:
+        pass
+
+
+async def mostrar_opciones_periodo(bot, chat_id: int, store_code: str, fecha_inicio, fecha_fin, user_sessions, user_id):
+    """Muestra las opciones de período - CON store_code en callbacks"""
+    # Guardar fechas en sesión (solo por si acaso, pero no serán necesarias)
+    if user_id in user_sessions:
+        user_sessions[user_id]['rango_fecha_inicio'] = fecha_inicio.date()
+        user_sessions[user_id]['rango_fecha_fin'] = fecha_fin.date()
+        user_sessions[user_id]['rango_store'] = store_code
+
+    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    # Incluir store_code y fechas en los callbacks
+    buttons = [
+        types.InlineKeyboardButton("🌅 Mañana (01:00 - 15:59)",
+                                 callback_data=f"periodo:manana:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("🌙 Tarde/Noche (16:00 - 23:59)",
+                                 callback_data=f"periodo:tarde:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("📅 Todo el día (00:00 - 23:59)",
+                                 callback_data=f"periodo:completo:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("❌ Cancelar",
+                                 callback_data=f"periodo:cancelar:{store_code}")
+    ]
+
+    markup.row(buttons[0], buttons[1])
+    markup.row(buttons[2])
+    markup.row(buttons[3])
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"📅 *Rango seleccionado:* {fecha_inicio_str} al {fecha_fin_str}\n\n"
+             f"⏰ *Seleccione el período del día:*",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+async def procesar_periodo_seleccion(bot, call, user_sessions):
+    """Procesa la selección del período - USA DATOS DEL CALLBACK, no de la sesión"""
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+
+    # Extraer datos del callback
+    parts = call.data.split(':')
+    if len(parts) < 3:
+        await bot.answer_callback_query(call.id, "Error en formato de datos")
+        return
+
+    periodo = parts[1]
+    store_code = parts[2]
+
+    if periodo == "cancelar":
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text="❌ *Operación cancelada*",
+            parse_mode="Markdown"
+        )
+        await show_action_buttons(bot, chat_id, store_code)
+        await bot.answer_callback_query(call.id)
+        return
+
+    # Obtener fechas del callback
+    if len(parts) >= 5:
+        fecha_inicio_str = parts[3]
+        fecha_fin_str = parts[4]
+        fecha_inicio = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date()
+        fecha_fin = datetime.strptime(fecha_fin_str, '%Y-%m-%d').date()
+    else:
+        await bot.answer_callback_query(call.id, "Error: Fechas no disponibles")
+        return
+
+    # Definir horas según período
+    if periodo == "manana":
+        hora_inicio = "01:00:00"
+        hora_fin = "15:59:59"
+        periodo_texto = "🌅 MAÑANA (01:00 - 15:59)"
+        periodo_nombre = "manana"
+    elif periodo == "tarde":
+        hora_inicio = "16:00:00"
+        hora_fin = "23:59:59"
+        periodo_texto = "🌙 TARDE/NOCHE (16:00 - 23:59)"
+        periodo_nombre = "tarde"
+    else:  # completo
+        hora_inicio = "00:00:00"
+        hora_fin = "23:59:59"
+        periodo_texto = "📅 TODO EL DÍA"
+        periodo_nombre = "completo"
+
+    # Mensaje de procesamiento
+    await bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        text=f"⏳ *Generando reporte Excel...*\n\n"
+             f"📅 Fecha: {fecha_inicio} al {fecha_fin}\n"
+             f"⏰ Período: {periodo_texto}\n"
+             f"🏪 Tienda: {store_code}\n\n"
+             f"Esto puede tomar unos segundos...",
+        parse_mode="Markdown"
+    )
+
+    try:
+        from reports.excel_reporter import generar_excel_auditoria
+        from database.queries import consultar_pedidos_por_rango_simple
+
+        datos = await consultar_pedidos_por_rango_simple(
+            store_code=store_code,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin
+        )
+
+        if not datos:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ *No se encontraron datos*\n\n"
+                     f"Para: {fecha_inicio} al {fecha_fin}\n"
+                     f"Período: {periodo_texto}",
+                parse_mode="Markdown"
+            )
+            await show_action_buttons(bot, chat_id, store_code)
+            await bot.answer_callback_query(call.id)
+            return
+
+        archivo_excel = await generar_excel_auditoria(datos, store_code, fecha_inicio, hora_inicio)
+
+        if not archivo_excel:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error generando archivo Excel*",
+                parse_mode="Markdown"
+            )
+            await show_action_buttons(bot, chat_id, store_code)
+            await bot.answer_callback_query(call.id)
+            return
+
+        with open(archivo_excel, 'rb') as file:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=file,
+                visible_file_name=f"auditoria_{store_code}_{fecha_inicio}_{periodo_nombre}.xlsx",
+                caption=f"✅ *Reporte generado exitosamente*\n\n"
+                        f"📊 *{len(datos)} registros*\n"
+                        f"📅 {fecha_inicio} al {fecha_fin}\n"
+                        f"⏰ {periodo_texto}\n"
+                        f"🏪 {store_code}"
+            )
+
+        await show_action_buttons(bot, chat_id, store_code)
+
+    except Exception as e:
+        logger.error(f"Error generando reporte: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error generando reporte:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+        await show_action_buttons(bot, chat_id, store_code)
+
+    await bot.answer_callback_query(call.id)
+
+
+async def procesar_hora_inicio_rango(bot, chat_id: int, texto: str, user_sessions):
+    """Procesa la hora de inicio ingresada - RECIBE user_sessions como parámetro"""
+    user_id = chat_id
+
+    try:
+        hora_valida = datetime.strptime(texto.strip(), "%H:%M").time()
+
+        if user_id in user_sessions:
+            user_sessions[user_id]['rango_hora_inicio'] = hora_valida
+            user_sessions[user_id]['state'] = 'WAITING_RANGO_HORA_FIN'
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"✅ Hora de inicio: {texto}\n\n"
+                 f"⏰ *Ingrese la hora de fin* (formato HH:MM):\n\n"
+                 f"Ejemplo: `23:00`",
+            parse_mode="Markdown"
+        )
+
+    except ValueError:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Formato incorrecto*\n\n"
+                 f"Use el formato HH:MM (ejemplo: 20:00)",
+            parse_mode="Markdown"
+        )
+
+
+async def procesar_hora_fin_rango(bot, chat_id: int, texto: str, user_sessions):
+    """Procesa la hora de fin - RECIBE user_sessions como parámetro"""
+    user_id = chat_id
+
+    try:
+        hora_fin = datetime.strptime(texto.strip(), "%H:%M").time()
+
+        if user_id not in user_sessions:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error de sesión*\n\nPor favor, inicie nuevamente.",
+                parse_mode="Markdown"
+            )
+            return
+
+        session = user_sessions[user_id]
+        hora_inicio = session.get('rango_hora_inicio')
+        fecha_inicio = session.get('rango_fecha_inicio')
+        fecha_fin = session.get('rango_fecha_fin')
+        store_code = session.get('store_code')
+
+        if not fecha_inicio or not fecha_fin:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error: Fechas no encontradas*\n\nPor favor, inicie nuevamente.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if hora_fin <= hora_inicio:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ *La hora de fin debe ser mayor que la de inicio*\n\n"
+                     f"Hora inicio: {hora_inicio.strftime('%H:%M')}\n"
+                     f"Intente nuevamente:",
+                parse_mode="Markdown"
+            )
+            return
+
+        progress_msg = await bot.send_message(
+            chat_id=chat_id,
+            text=f"⏳ *Generando reporte Excel...*\n\n"
+                 f"📅 Fecha: {fecha_inicio} al {fecha_fin}\n"
+                 f"⏰ Horas: {hora_inicio.strftime('%H:%M')} a {hora_fin.strftime('%H:%M')}\n"
+                 f"🏪 Tienda: {store_code}\n\n"
+                 f"Esto puede tomar unos segundos...",
+            parse_mode="Markdown"
+        )
+
+        from reports.excel_reporter import generar_excel_auditoria
+        from database.queries import consultar_pedidos_por_rango
+
+        datos = await consultar_pedidos_por_rango(
+            store_code=store_code,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin
+        )
+
+        if not datos:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=progress_msg.message_id,
+                text=f"⚠️ *No se encontraron datos*\n\n"
+                     f"Para el rango: {fecha_inicio} {hora_inicio.strftime('%H:%M')} - {fecha_fin} {hora_fin.strftime('%H:%M')}",
+                parse_mode="Markdown"
+            )
+            await show_action_buttons(bot, chat_id, store_code)
+            return
+
+        archivo_excel = await generar_excel_auditoria(datos, store_code, fecha_inicio, hora_inicio)
+
+        with open(archivo_excel, 'rb') as file:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=file,
+                visible_file_name=f"auditoria_{store_code}_{fecha_inicio}_{hora_inicio.strftime('%H-%M')}.xlsx",
+                caption=f"✅ *Reporte generado exitosamente*\n\n"
+                        f"📊 *{len(datos)} registros*\n"
+                        f"📅 {fecha_inicio} {hora_inicio.strftime('%H:%M')} - {fecha_fin} {hora_fin.strftime('%H:%M')}\n"
+                        f"🏪 {store_code}"
+            )
+
+        await bot.delete_message(chat_id=chat_id, message_id=progress_msg.message_id)
+
+        session.pop('rango_fecha_inicio', None)
+        session.pop('rango_fecha_fin', None)
+        session.pop('rango_hora_inicio', None)
+        session['state'] = 'in_menu'
+
+        await show_action_buttons(bot, chat_id, store_code)
+
+    except ValueError:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Formato incorrecto*\n\n"
+                 f"Use el formato HH:MM (ejemplo: 23:00)",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error generando reporte: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error generando reporte:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+        if store_code:
+            await show_action_buttons(bot, chat_id, store_code)
+
+
+async def procesar_fecha_manual_rango(bot, chat_id: int, texto: str, user_sessions):
+    """Procesa la fecha manual ingresada y muestra opciones de período - VERSIÓN CORREGIDA"""
+    user_id = chat_id
+
+    try:
+        # Validar formato de fecha
+        fecha = datetime.strptime(texto.strip(), "%Y-%m-%d").date()
+
+        if user_id in user_sessions:
+            session = user_sessions[user_id]
+            state = session.get('state')
+            store_code = session.get('store_code')
+
+            if state == 'WAITING_RANGO_FECHA_INICIO':
+                session['rango_fecha_inicio'] = fecha
+                session['state'] = 'WAITING_RANGO_FECHA_FIN'
+
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ Fecha inicio: {fecha}\n\n"
+                         f"📅 *Ingrese la fecha de fin* (formato YYYY-MM-DD):\n\n"
+                         f"Ejemplo: `2026-03-20`",
+                    parse_mode="Markdown"
+                )
+                return
+
+            elif state == 'WAITING_RANGO_FECHA_FIN':
+                fecha_inicio = session.get('rango_fecha_inicio')
+
+                if fecha < fecha_inicio:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"❌ *La fecha de fin debe ser mayor o igual a la de inicio*\n\n"
+                             f"Fecha inicio: {fecha_inicio}\n"
+                             f"Intente nuevamente:",
+                        parse_mode="Markdown"
+                    )
+                    return
+
+                # Guardar fecha fin
+                session['rango_fecha_fin'] = fecha
+
+                # Limpiar estado ANTES de mostrar los botones
+                session['state'] = 'in_menu'
+
+                # Convertir fechas a objetos datetime
+                fecha_inicio_obj = datetime.strptime(str(fecha_inicio), '%Y-%m-%d')
+                fecha_fin_obj = datetime.strptime(str(fecha), '%Y-%m-%d')
+
+                # Mostrar botones de período
+                await mostrar_opciones_periodo_desde_manual(
+                    bot, chat_id, store_code,
+                    fecha_inicio_obj, fecha_fin_obj
+                )
+                return
+
+    except ValueError:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Formato incorrecto*\n\n"
+                 f"Use el formato YYYY-MM-DD (ejemplo: 2026-03-19)",
+            parse_mode="Markdown"
+        )
+        return
+
+
+async def mostrar_opciones_periodo_desde_manual(bot, chat_id: int, store_code: str, fecha_inicio, fecha_fin):
+    """Muestra las opciones de período para fechas ingresadas manualmente - SIN DEPENDER DE SESIÓN"""
+
+    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    # Incluir store_code y fechas en los callbacks
+    buttons = [
+        types.InlineKeyboardButton("🌅 Mañana (01:00 - 15:59)",
+                                 callback_data=f"periodo:manana:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("🌙 Tarde/Noche (16:00 - 23:59)",
+                                 callback_data=f"periodo:tarde:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("📅 Todo el día (00:00 - 23:59)",
+                                 callback_data=f"periodo:completo:{store_code}:{fecha_inicio_str}:{fecha_fin_str}"),
+        types.InlineKeyboardButton("❌ Cancelar",
+                                 callback_data=f"periodo:cancelar:{store_code}")
+    ]
+
+    markup.row(buttons[0], buttons[1])
+    markup.row(buttons[2])
+    markup.row(buttons[3])
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"📅 *Rango seleccionado manualmente:* {fecha_inicio_str} al {fecha_fin_str}\n\n"
+             f"⏰ *Seleccione el período del día:*",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================================
+# HANDLERS EXISTENTES
 # ============================================================================
 
 async def handle_order_verification(bot, chat_id: int, store_code: str, order_number: str):
-    """Maneja verificación de estado de orden - CON pickup_cabecera_pedidos"""
+    """Maneja verificación de estado de orden"""
     try:
         await bot.send_message(
             chat_id=chat_id,
@@ -496,11 +976,7 @@ async def handle_order_verification(bot, chat_id: int, store_code: str, order_nu
         cursor = connection.cursor()
 
         try:
-            # SOLO CAMBIO: Usar la nueva query que incluye pickup_cabecera_pedidos
             query = QueryManager.get_order_status_query()
-
-            # IMPORTANTE: Ahora necesita 3 parámetros en lugar de 2
-            # (Cabecera_App, kiosko_cabecera_pedidos, pickup_cabecera_pedidos)
             cursor.execute(query, (order_number, order_number, order_number))
             results = cursor.fetchall()
 
@@ -709,74 +1185,9 @@ No se encontraron códigos asociados para: `{cfac_id}`
     await show_action_buttons(bot, chat_id, store_code)
 
 
-async def handle_diagnostic(bot, chat_id: int, store_code: str):
-    """Maneja diagnóstico completo del sistema"""
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"🔬 *INICIANDO DIAGNÓSTICO COMPLETO - {store_code}*",
-            parse_mode="Markdown"
-        )
-
-        # Obtener información de conexión
-        connection_info = db_manager.get_connection_info(store_code)
-
-        # Construir diagnóstico
-        diagnostic_text = f"""
-🔍 *DIAGNÓSTICO DEL SISTEMA - {store_code}*
-
-📊 *INFORMACIÓN GENERAL:*
-• Base de datos: `{connection_info['database_name']}`
-• Sistema recomendado: {connection_info['recommended_os'].upper() if connection_info['recommended_os'] else 'NO DISPONIBLE'}
-
-🔌 *PRUEBAS DE CONEXIÓN:*
-"""
-
-        # Linux
-        linux_test = connection_info['linux_test']
-        linux_status = "✅ CONECTADO" if linux_test['success'] else "❌ FALLIDO"
-        diagnostic_text += f"• Linux: {linux_status}\n"
-
-        # Windows
-        windows_test = connection_info['windows_test']
-        windows_status = "✅ CONECTADO" if windows_test['success'] else "❌ FALLIDO"
-        diagnostic_text += f"• Windows: {windows_status}\n"
-
-        # Servicios
-        try:
-            from core.image_service import image_service
-            diagnostic_text += f"\n🖼️ *SERVICIO DE IMÁGENES:*\n"
-            diagnostic_text += f"• Estado: {'✅ DISPONIBLE' if image_service.is_available() else '❌ NO DISPONIBLE'}\n"
-            diagnostic_text += f"• Sistema: {image_service.system}\n"
-            diagnostic_text += f"• Selenium: {'✅ DISPONIBLE' if image_service.is_selenium_available() else '❌ NO DISPONIBLE'}\n"
-        except Exception as img_error:
-            diagnostic_text += f"\n🖼️ *SERVICIO DE IMÁGENES:*\n• Estado: ⚠️ NO VERIFICADO\n"
-
-        diagnostic_text += f"\n🕒 *Diagnóstico realizado:* {datetime.now().strftime('%H:%M:%S')}"
-
-        await bot.send_message(
-            chat_id=chat_id,
-            text=diagnostic_text,
-            parse_mode="Markdown"
-        )
-
-    except Exception as e:
-        logger.error(f"Error en diagnóstico: {e}")
-        error_msg = str(e).replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
-
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"❌ *Error en diagnóstico:*\n`{error_msg[:200]}`",
-            parse_mode="Markdown"
-        )
-
-    await show_action_buttons(bot, chat_id, store_code)
-
-
 async def handle_reprint_3attempts(bot, chat_id: int, store_code: str, reprint_type: str, document_id: str):
     """Maneja re-impresión con 3 intentos"""
     try:
-        # Validar tipo
         if reprint_type not in ["factura", "nota_credito", "comanda"]:
             await bot.send_message(
                 chat_id=chat_id,
@@ -800,14 +1211,11 @@ async def handle_reprint_3attempts(bot, chat_id: int, store_code: str, reprint_t
             parse_mode="Markdown"
         )
 
-        # Importar el servicio de impresión dinámicamente
         from core.print_service_3attempts import PrintService3Attempts
 
-        # Crear servicio y ejecutar
         print_service = PrintService3Attempts(store_code)
         result = await print_service.print_document(bot, chat_id, reprint_type, document_id)
 
-        # Mostrar resultado final
         if result.get("success"):
             final_message = f"✅ *Re-impresión completada exitosamente*\n\n{result['message']}"
         else:

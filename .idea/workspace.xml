@@ -5,80 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1231170c-7f36-45e1-a1eb-4ad53f5a3829" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.env" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/kfc_order_management_bot.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/check_imports.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/database.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/paths.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/settings.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/bot.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/connection_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/image_api_client.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/image_generator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/image_generator_api.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/image_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/image_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/linux_html_generator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/linux_image_generator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/linux_json_imager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/linux_selenium_capture.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/network_detector.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/os_detector.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/print_service_3attempts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/printer_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/query_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/selenium_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/ticket_generator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/database_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/linux_db.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/queries.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/database/windows_db.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/diagnostic.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/diagnostic_os.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/image_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/invoice_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/menu_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/menu_handler_combined.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/order_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/report_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/start_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/handlers/store_handler.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/main_simple.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/reports/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/reports/charts.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/reports/export.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/reports/generator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/services/api_image_service.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/css/styles.css" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_connection.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_network.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/helpers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/logger.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/markdown_utils.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/templates/comanda.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/templates/comanda_template.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/templates/invoice.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/templates/invoice_template.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/utils/validators.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/print_service_3attempts.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/print_service_3attempts.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -120,19 +48,21 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "DefaultHtmlFileTemplate": "HTML File",
+    "Python.menu_handler_combined.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "main",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\angel.gualotuna\OneDrive - International Food Services - Grupo KFC\Documentos\APP\Desarrollos 2026\Bots\KFC_W_Linux\kfc_order_management_bot\core" />
@@ -159,11 +89,26 @@
       <workItem from="1770391361034" duration="19619000" />
       <workItem from="1770490772834" duration="22764000" />
       <workItem from="1770576861549" duration="5310000" />
-      <workItem from="1770650509700" duration="1835000" />
+      <workItem from="1770650509700" duration="11440000" />
+      <workItem from="1770769153487" duration="2811000" />
+      <workItem from="1771611783857" duration="4628000" />
+      <workItem from="1771859434266" duration="1909000" />
+      <workItem from="1772651179376" duration="659000" />
+      <workItem from="1772723275860" duration="1073000" />
+      <workItem from="1772823070830" duration="1118000" />
+      <workItem from="1773155889334" duration="10801000" />
+      <workItem from="1773403842450" duration="1183000" />
+      <workItem from="1773691697352" duration="1112000" />
+      <workItem from="1773773529477" duration="1943000" />
+      <workItem from="1773858389861" duration="558000" />
+      <workItem from="1773932146628" duration="11967000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/kfc_order_management_bot$menu_handler_combined.coverage" NAME="menu_handler_combined Coverage Results" MODIFIED="1773952559912" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/handlers" />
   </component>
 </project>

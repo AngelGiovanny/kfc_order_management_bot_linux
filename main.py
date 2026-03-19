@@ -1,53 +1,42 @@
 """
-main.py - Bot principal de gestión KFC - SIN FLUJO 4-PASOS EXPLÍCITO
-Módulo principal que maneja el bot de Telegram
+main.py - Bot principal de gestión KFC
 """
 
 import asyncio
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
 import traceback
 
 import telebot
 from telebot import types
 from telebot.async_telebot import AsyncTeleBot
 
-# Agregar directorio raíz al path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import BOT_TOKEN
 from utils.logger import get_logger, usage_logger
 from core.os_detector import OSDetector
 from config.database import db_manager
-
-# Importar handlers
 from handlers.menu_handler_combined import (
     show_main_menu, show_action_buttons, handle_order_verification,
     handle_order_audit, handle_invoice_image, handle_comanda,
-    handle_associated_code, handle_diagnostic,
-    validate_store_code, handle_reprint_3attempts
+    handle_associated_code, handle_auditoria_rango,
+    validate_store_code, handle_reprint_3attempts,
+    handle_rango_seleccion, procesar_hora_inicio_rango,
+    procesar_hora_fin_rango, procesar_fecha_manual_rango,
+    procesar_periodo_seleccion
 )
-
-# Importar handler de reportes
 from handlers.report_handler import handle_report_command
-
-# Importar image_service para usar el flujo 4-pasos interno
 from core.image_service import image_service
 
-# Configurar logger
 logger = get_logger("main_bot")
 
-# Verificar token
 if not BOT_TOKEN:
     print("❌ ERROR: BOT_TOKEN no configurado")
     sys.exit(1)
 
-# Inicializar bot
 bot = AsyncTeleBot(BOT_TOKEN)
-
-# Estados y sesiones
 user_sessions = {}
 
 
@@ -63,23 +52,19 @@ class UserState:
     WAITING_REPRINT_TYPE = "waiting_reprint_type"
     IN_MENU = "in_menu"
     DIAGNOSTIC = "diagnostic"
-    # NOTA: Se han eliminado los estados WAITING_*_4STEP
+    WAITING_RANGO_FECHA_INICIO = "waiting_rango_fecha_inicio"
+    WAITING_RANGO_FECHA_FIN = "waiting_rango_fecha_fin"
+    WAITING_RANGO_HORA_INICIO = "waiting_rango_hora_inicio"
+    WAITING_RANGO_HORA_FIN = "waiting_rango_hora_fin"
 
 
 async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, username: str):
-    """Maneja la configuración inicial de una tienda - SIN MENSAJES DUPLICADOS"""
+    """Maneja la configuración inicial de una tienda"""
     try:
-        # NO enviar mensaje aquí, ya se envía desde WAITING_STORE
-
-        # Detección del sistema operativo
         os_type, address = OSDetector.detect_os(store_code, quick=True)
-
-        # Probar conexión con el OS detectado
         connection_info = db_manager.get_connection_info(store_code)
 
-        # Mensaje según resultado - NO enviar mensaje de éxito aquí
         if connection_info['recommended_os']:
-            # Solo registrar en logs
             usage_logger.log_action(
                 user_id=user_id,
                 username=username,
@@ -87,10 +72,8 @@ async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, u
                 store=store_code,
                 details=f"Sistema: {os_type}, Dirección: {address}, BD: {connection_info['database_name']}"
             )
-
             return connection_info['recommended_os']
         else:
-            # Si no hay conexión, solo registrar error
             usage_logger.log_action(
                 user_id=user_id,
                 username=username,
@@ -98,13 +81,10 @@ async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, u
                 store=store_code,
                 details=f"Error: No se pudo conectar. OS detectado: {os_type}"
             )
-
             return None
 
     except Exception as e:
         logger.error(f"Error en setup de tienda: {e}")
-
-        # Registrar error
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -112,51 +92,24 @@ async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, u
             store=store_code,
             details=f"Exception: {str(e)[:100]}"
         )
-
         return None
 
 
 async def show_reprint_menu(bot, chat_id: int, store_code: str):
     """Muestra menú de re-impresión"""
     menu_text = f"🏪 *Tienda:* {store_code}\n\n🖨️ *SELECCIONE TIPO DE RE-IMPRESIÓN:*"
-
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-
     buttons = [
         types.KeyboardButton("📄 Re-imprimir Factura"),
         types.KeyboardButton("📋 Re-imprimir Nota Crédito"),
         types.KeyboardButton("🍗 Re-imprimir Comanda"),
         types.KeyboardButton("🔙 Volver al menú")
     ]
-
     markup.row(buttons[0], buttons[1])
     markup.row(buttons[2], buttons[3])
-
     await bot.send_message(
         chat_id=chat_id,
         text=menu_text,
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-
-
-async def show_action_menu_after_image(bot, chat_id: int, store_code: str):
-    """Muestra menú de acción después de generar una imagen"""
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-
-    buttons = [
-        types.KeyboardButton("🖼️ Factura imagen"),
-        types.KeyboardButton("🍗 Comanda"),
-        types.KeyboardButton("📄 Nota crédito"),
-        types.KeyboardButton("🏠 Menú principal")
-    ]
-
-    markup.row(buttons[0], buttons[1])
-    markup.row(buttons[2], buttons[3])
-
-    await bot.send_message(
-        chat_id=chat_id,
-        text=f"🏪 *Tienda:* {store_code}\n\n¿Qué desea hacer ahora?",
         reply_markup=markup,
         parse_mode="Markdown"
     )
@@ -166,43 +119,33 @@ def validate_cfac_id(cfac_id: str) -> bool:
     """Valida si un CFAC_ID tiene formato válido"""
     if not cfac_id:
         return False
-
-    # Formato esperado: KXXXFXXXXXXXXXX o KXXXNXXXXXXXXXX
     if len(cfac_id) < 10:
         return False
-
-    # Debe empezar con K
     if not cfac_id.startswith('K'):
         return False
-
-    # Debe tener F o N después de los 4 primeros caracteres
     if cfac_id[4] not in ['F', 'N']:
         return False
-
     return True
 
 
 @bot.message_handler(commands=['start', 'inicio', 'help', 'ayuda'])
 async def start_command(message):
-    """Maneja el comando /start simplificado"""
+    """Maneja el comando /start"""
     user_id = message.from_user.id
     chat_id = message.chat.id
     username = message.from_user.username or message.from_user.first_name
 
     logger.info(f"Comando /start de usuario {user_id} ({username})")
 
-    # Registrar en logs
     usage_logger.log_action(
         user_id=user_id,
         username=username,
         action="START_COMMAND"
     )
 
-    # Limpiar sesión anterior
     if user_id in user_sessions:
         del user_sessions[user_id]
 
-    # Inicializar nueva sesión
     user_sessions[user_id] = {
         'state': UserState.WAITING_STORE,
         'store_code': None,
@@ -233,17 +176,45 @@ async def report_command(message):
     """Maneja el comando /reportes"""
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
-
     logger.info(f"Comando /reportes de usuario {user_id} ({username})")
-
-    # Registrar en logs
     usage_logger.log_action(
         user_id=user_id,
         username=username,
         action="REPORT_COMMAND"
     )
-
     await handle_report_command(bot, message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('periodo:'))
+async def handle_periodo_callback(call):
+    """Maneja la selección de período"""
+    await procesar_periodo_seleccion(bot, call, user_sessions)
+
+
+@bot.callback_query_handler(func=lambda call: True)
+async def handle_callback_query(call):
+    """Maneja las consultas de callback generales"""
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+
+    logger.info(f"Callback general de usuario {user_id}: {call.data}")
+
+    session = user_sessions.get(user_id)
+    if not session:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ *Sesión no encontrada*\n\nUse /start para iniciar",
+            parse_mode="Markdown"
+        )
+        await bot.answer_callback_query(call.id)
+        return
+
+    store_code = session.get('store_code')
+
+    if call.data.startswith('rango:'):
+        await handle_rango_seleccion(bot, call, store_code, user_sessions)
+
+    await bot.answer_callback_query(call.id)
 
 
 @bot.message_handler(func=lambda message: True)
@@ -256,7 +227,6 @@ async def handle_all_messages(message):
 
     logger.info(f"Mensaje de {user_id} ({username}): {text}")
 
-    # Obtener sesión
     session = user_sessions.get(user_id)
     if not session:
         await start_command(message)
@@ -265,51 +235,58 @@ async def handle_all_messages(message):
     current_state = session.get('state')
     store_code = session.get('store_code')
 
-    # Actualizar actividad
     session['last_activity'] = datetime.now()
 
-    # Lista de botones del menú actualizada (sin opciones 4-pasos)
-    MENU_BUTTONS = [
-        "🔍 Verificar orden", "📊 Auditoría", "🖼️ Factura imagen", "📄 Nota crédito",
-        "🍗 Comanda", "🔗 Código asociado", "🖨️ Re-Impresión",
-        "🔧 Diagnóstico", "🔄 Cambiar tienda", "❌ Salir", "🔍 Nueva consulta",
-        "🏠 Menú principal", "🖼️ Factura imagen", "🍗 Comanda", "📄 Nota crédito",
-        "📄 Re-imprimir Factura", "📋 Re-imprimir Nota Crédito", "🍗 Re-imprimir Comanda",
-        "🔙 Volver al menú"
-    ]
+    # ============================================
+    # ESTADOS DE AUDITORÍA POR RANGO (DEBEN IR PRIMERO)
+    # ============================================
+    if current_state == UserState.WAITING_RANGO_FECHA_INICIO:
+        logger.info(f"Procesando fecha inicio manual: {text}")
+        await procesar_fecha_manual_rango(bot, chat_id, text, user_sessions)
+        return
 
-    # Manejar según estado
+    if current_state == UserState.WAITING_RANGO_FECHA_FIN:
+        logger.info(f"Procesando fecha fin manual: {text}")
+        await procesar_fecha_manual_rango(bot, chat_id, text, user_sessions)
+        return
+
+    if current_state == UserState.WAITING_RANGO_HORA_INICIO:
+        logger.info(f"Procesando hora inicio: {text}")
+        await procesar_hora_inicio_rango(bot, chat_id, text, user_sessions)
+        return
+
+    if current_state == UserState.WAITING_RANGO_HORA_FIN:
+        logger.info(f"Procesando hora fin: {text}")
+        await procesar_hora_fin_rango(bot, chat_id, text, user_sessions)
+        return
+
+    # ============================================
+    # WAITING_STORE
+    # ============================================
     if current_state == UserState.WAITING_STORE:
         if validate_store_code(text):
             store_code = text.upper()
             session['store_code'] = store_code
 
-            # Enviar mensaje inicial de configuración SOLO AQUÍ
             setup_msg = await bot.send_message(
                 chat_id=chat_id,
                 text=f"🔍 Configurando tienda {store_code}...",
                 parse_mode="Markdown"
             )
 
-            # Configurar tienda con detección
             recommended_os = await handle_store_setup(bot, chat_id, store_code, user_id, username)
 
             if recommended_os:
-                # Eliminar mensaje de configuración
                 await bot.delete_message(chat_id=chat_id, message_id=setup_msg.message_id)
-
                 session['state'] = UserState.IN_MENU
-                # Mostrar directamente el menú principal
                 await show_main_menu(bot, chat_id, store_code)
             else:
-                # Mostrar opciones de error
                 markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
                 markup.row(
                     types.KeyboardButton("🔧 Reintentar"),
                     types.KeyboardButton("🔄 Otra tienda")
                 )
                 markup.row(types.KeyboardButton("❌ Cancelar"))
-
                 await bot.send_message(
                     chat_id=chat_id,
                     text=f"❌ *Problemas con {store_code}*\n\n¿Qué desea hacer?",
@@ -317,15 +294,18 @@ async def handle_all_messages(message):
                     parse_mode="Markdown"
                 )
                 session['state'] = UserState.DIAGNOSTIC
-
         else:
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *Código inválido*\n\nFormato: K001 a K999\nEjemplo: K025, K004",
                 parse_mode="Markdown"
             )
+        return
 
-    elif current_state == UserState.IN_MENU:
+    # ============================================
+    # IN_MENU
+    # ============================================
+    if current_state == UserState.IN_MENU:
         if not store_code:
             await bot.send_message(
                 chat_id=chat_id,
@@ -334,7 +314,6 @@ async def handle_all_messages(message):
             )
             return
 
-        # Registrar acción
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -342,7 +321,6 @@ async def handle_all_messages(message):
             store=store_code
         )
 
-        # Procesar selección del menú
         if text == "🔍 Verificar orden":
             session['state'] = UserState.WAITING_ORDER
             await bot.send_message(
@@ -395,8 +373,8 @@ async def handle_all_messages(message):
             session['state'] = UserState.WAITING_REPRINT_TYPE
             await show_reprint_menu(bot, chat_id, store_code)
 
-        elif text == "🔧 Diagnóstico":
-            await handle_diagnostic(bot, chat_id, store_code)
+        elif text == "📅 Auditoría por Rango":
+            await handle_auditoria_rango(bot, chat_id, store_code)
 
         elif text == "🔄 Cambiar tienda":
             session['state'] = UserState.WAITING_STORE
@@ -410,7 +388,6 @@ async def handle_all_messages(message):
         elif text == "❌ Salir":
             if user_id in user_sessions:
                 del user_sessions[user_id]
-
             await bot.send_message(
                 chat_id=chat_id,
                 text="✅ *SESIÓN FINALIZADA*\n\nGracias por usar el sistema KFC.\n\nPara una nueva consulta, envíe /start",
@@ -418,7 +395,6 @@ async def handle_all_messages(message):
                 reply_markup=types.ReplyKeyboardRemove()
             )
 
-        # MANEJO DE BOTONES DEL MENÚ DE ACCIÓN (compatibilidad)
         elif text in ["🔍 Nueva consulta", "🏠 Menú principal"]:
             session['state'] = UserState.IN_MENU
             await show_main_menu(bot, chat_id, store_code)
@@ -429,22 +405,23 @@ async def handle_all_messages(message):
                 text="⚠️ *Opción no reconocida*\n\nSeleccione una opción del menú.",
                 parse_mode="Markdown"
             )
+        return
 
-    elif current_state == UserState.DIAGNOSTIC:
+    # ============================================
+    # DIAGNOSTIC
+    # ============================================
+    if current_state == UserState.DIAGNOSTIC:
         if text == "🔧 Reintentar":
             if store_code:
-                # Enviar mensaje de reintento
                 await bot.send_message(
                     chat_id=chat_id,
                     text=f"🔍 Reintentando conexión con {store_code}...",
                     parse_mode="Markdown"
                 )
-
                 recommended_os = await handle_store_setup(bot, chat_id, store_code, user_id, username)
                 if recommended_os:
                     session['state'] = UserState.IN_MENU
                     await show_main_menu(bot, chat_id, store_code)
-
         elif text == "🔄 Otra tienda":
             session['state'] = UserState.WAITING_STORE
             session['store_code'] = None
@@ -453,27 +430,21 @@ async def handle_all_messages(message):
                 text="🏪 *Ingrese el código de la nueva tienda:*",
                 parse_mode="Markdown"
             )
-
         elif text == "❌ Cancelar":
             if user_id in user_sessions:
                 del user_sessions[user_id]
-
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *Operación cancelada*\n\nUse /start para comenzar de nuevo.",
                 parse_mode="Markdown",
                 reply_markup=types.ReplyKeyboardRemove()
             )
+        return
 
-    elif current_state == UserState.WAITING_ORDER:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Registrar consulta de orden
+    # ============================================
+    # WAITING_ORDER
+    # ============================================
+    if current_state == UserState.WAITING_ORDER:
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -481,19 +452,14 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"Orden: {text}"
         )
-
         await handle_order_verification(bot, chat_id, store_code, text)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_AUDIT:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Registrar auditoría
+    # ============================================
+    # WAITING_AUDIT
+    # ============================================
+    if current_state == UserState.WAITING_AUDIT:
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -501,29 +467,21 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"Patrón: {text}"
         )
-
         await handle_order_audit(bot, chat_id, store_code, text)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_INVOICE:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Validar formato del CFAC_ID
+    # ============================================
+    # WAITING_INVOICE
+    # ============================================
+    if current_state == UserState.WAITING_INVOICE:
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX\nEjemplo: K096F001779631",
                 parse_mode="Markdown"
             )
-            # Mantener en el mismo estado para que reintente
             return
-
-        # Registrar generación de factura
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -531,30 +489,21 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"CFAC_ID: {text}"
         )
-
-        # Usar el handler que ahora usa el flujo 4-pasos interno
         await handle_invoice_image(bot, chat_id, store_code, text, is_credit_note=False)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_CREDIT_NOTE:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Validar formato del CFAC_ID
+    # ============================================
+    # WAITING_CREDIT_NOTE
+    # ============================================
+    if current_state == UserState.WAITING_CREDIT_NOTE:
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXNXXXXXXXXXX\nEjemplo: K096N000123456",
                 parse_mode="Markdown"
             )
-            # Mantener en el mismo estado para que reintente
             return
-
-        # Registrar generación de nota de crédito
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -562,30 +511,21 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"CFAC_ID: {text}"
         )
-
-        # Usar el handler que ahora usa el flujo 4-pasos interno
         await handle_invoice_image(bot, chat_id, store_code, text, is_credit_note=True)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_COMANDA:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Validar formato del CFAC_ID
+    # ============================================
+    # WAITING_COMANDA
+    # ============================================
+    if current_state == UserState.WAITING_COMANDA:
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX\nEjemplo: K096F001779631",
                 parse_mode="Markdown"
             )
-            # Mantener en el mismo estado para que reintente
             return
-
-        # Registrar consulta de comanda
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -593,30 +533,21 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"CFAC_ID: {text}"
         )
-
-        # Usar el handler que ahora usa el flujo 4-pasos interno
         await handle_comanda(bot, chat_id, store_code, text)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_ASSOCIATED_CODE:
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Validar formato del CFAC_ID
+    # ============================================
+    # WAITING_ASSOCIATED_CODE
+    # ============================================
+    if current_state == UserState.WAITING_ASSOCIATED_CODE:
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX o KXXXNXXXXXXXXXX",
                 parse_mode="Markdown"
             )
-            # Mantener en el mismo estado para que reintente
             return
-
-        # Registrar consulta de código asociado
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -624,11 +555,14 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"CFAC_ID: {text}"
         )
-
         await handle_associated_code(bot, chat_id, store_code, text)
         session['state'] = UserState.IN_MENU
+        return
 
-    elif current_state == UserState.WAITING_REPRINT_TYPE:
+    # ============================================
+    # WAITING_REPRINT_TYPE
+    # ============================================
+    if current_state == UserState.WAITING_REPRINT_TYPE:
         if text == "📄 Re-imprimir Factura":
             session['state'] = UserState.WAITING_REPRINT
             session['reprint_type'] = "factura"
@@ -637,7 +571,6 @@ async def handle_all_messages(message):
                 text="🖨️ *Ingrese el CFAC_ID para re-imprimir factura:*",
                 parse_mode="Markdown"
             )
-
         elif text == "📋 Re-imprimir Nota Crédito":
             session['state'] = UserState.WAITING_REPRINT
             session['reprint_type'] = "nota_credito"
@@ -646,7 +579,6 @@ async def handle_all_messages(message):
                 text="🖨️ *Ingrese el CFAC_ID para re-imprimir nota de crédito:*",
                 parse_mode="Markdown"
             )
-
         elif text == "🍗 Re-imprimir Comanda":
             session['state'] = UserState.WAITING_REPRINT
             session['reprint_type'] = "comanda"
@@ -655,32 +587,23 @@ async def handle_all_messages(message):
                 text="🖨️ *Ingrese el CFAC_ID para re-imprimir comanda:*",
                 parse_mode="Markdown"
             )
-
         elif text == "🔙 Volver al menú":
             session['state'] = UserState.IN_MENU
             await show_main_menu(bot, chat_id, store_code)
+        return
 
-    elif current_state == UserState.WAITING_REPRINT:
+    # ============================================
+    # WAITING_REPRINT
+    # ============================================
+    if current_state == UserState.WAITING_REPRINT:
         reprint_type = session.get('reprint_type', 'factura')
-
-        # Validar que no sea un comando del menú
-        if text in MENU_BUTTONS:
-            # Es un botón del menú, procesarlo
-            session['state'] = UserState.IN_MENU
-            await handle_all_messages(message)
-            return
-
-        # Validar formato del CFAC_ID
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
                 text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX para facturas/comandas\nKXXXNXXXXXXXXXX para notas de crédito",
                 parse_mode="Markdown"
             )
-            # Mantener en el mismo estado para que reintente
             return
-
-        # Registrar re-impresión
         usage_logger.log_action(
             user_id=user_id,
             username=username,
@@ -688,34 +611,29 @@ async def handle_all_messages(message):
             store=store_code,
             details=f"Documento: {text}"
         )
-
         await handle_reprint_3attempts(bot, chat_id, store_code, reprint_type, text)
         session['state'] = UserState.IN_MENU
         if 'reprint_type' in session:
             del session['reprint_type']
+        return
 
-    else:
-        # Estado desconocido, volver al inicio
-        session['state'] = UserState.WAITING_STORE
-        await bot.send_message(
-            chat_id=chat_id,
-            text="⚠️ *Estado no reconocido*\n\nPor favor ingrese el código de tienda:",
-            parse_mode="Markdown"
-        )
+    # ============================================
+    # ESTADO NO MANEJADO
+    # ============================================
+    session['state'] = UserState.WAITING_STORE
+    await bot.send_message(
+        chat_id=chat_id,
+        text="⚠️ *Estado no reconocido*\n\nPor favor ingrese el código de tienda:",
+        parse_mode="Markdown"
+    )
 
 
 async def main():
     """Función principal"""
-    logger.info("🤖 Iniciando KFC Bot - Sistema Completo")
+    logger.info("🤖 Iniciando KFC Bot")
     logger.info(f"🕒 Hora de inicio: {datetime.now()}")
 
     try:
-        # Verificar estado del image_service
-        logger.info(f"🔧 ImageService: {'✅ DISPONIBLE' if image_service.is_available() else '❌ NO DISPONIBLE'}")
-        if image_service.is_available():
-            logger.info(f"   Método: {'Selenium' if image_service.is_selenium_available() else 'Imgkit'}")
-            logger.info(f"   Sistema: {image_service.system}")
-
         bot_info = await bot.get_me()
         logger.info(f"✅ Bot: @{bot_info.username}")
 
@@ -724,15 +642,10 @@ async def main():
 
     except Exception as e:
         logger.error(f"❌ Error: {e}")
-        import traceback
         traceback.print_exc()
     finally:
-        # Cerrar todas las conexiones
         db_manager.close_all_connections()
-
-        # Cerrar Selenium si está activo
         image_service.close_selenium()
-
         logger.info("👋 Bot detenido")
 
 
