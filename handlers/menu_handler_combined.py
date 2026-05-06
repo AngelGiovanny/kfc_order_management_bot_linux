@@ -6,6 +6,7 @@ VERSIÓN MEJORADA CON ESTRATEGIA DUAL LINUX/WINDOWS - CON PERÍODOS PREDEFINIDOS
 import asyncio
 import logging
 import json
+import base64
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
@@ -17,19 +18,70 @@ from utils.logger import get_logger, usage_logger
 
 logger = get_logger(__name__)
 
+# Variable global para el bot (se asignará desde main.py)
+_bot_instance = None
+
+
+def set_bot_instance(bot):
+    """Asigna la instancia del bot para usar en callbacks"""
+    global _bot_instance
+    _bot_instance = bot
+
+
+def get_bot():
+    """Obtiene la instancia del bot"""
+    return _bot_instance
+
 
 def validate_store_code(store_code: str) -> bool:
-    """Valida el código de tienda K001 a K999"""
+    """Valida el código de tienda MULTIMARCA"""
     store_code = store_code.upper().strip()
 
-    if not store_code.startswith('K'):
+    # Definir rangos válidos por marca (prefijo: (mínimo, máximo))
+    valid_prefixes = {
+        'K': (1, 999),  # KFC
+        'M': (1, 999),  # Menestras del Negro
+        'J': (1, 999),  # Cajun
+        'T': (1, 999),  # Tropi
+        'G': (1, 999),  # Gus
+        'A': (1, 999),  # American Deli
+        'E': (1, 999),  # Español
+        'V': (1, 999),  # Juan Valdez
+        'I': (1, 999),  # Il Cappo
+        'R': (1, 999),  # Cara Res
+    }
+
+    # Prefijos de dos letras (siempre con 2 letras)
+    two_letter_prefixes = {
+        'BS': (1, 999),  # Baskin Robbins
+        'CN': (1, 999),  # Cinnabon
+    }
+
+    # Verificar prefijos de dos letras
+    if store_code[:2] in two_letter_prefixes:
+        try:
+            num_part = store_code[2:]
+            if num_part and num_part.isdigit():
+                num = int(num_part)
+                min_num, max_num = two_letter_prefixes[store_code[:2]]
+                return min_num <= num <= max_num
+        except:
+            pass
         return False
 
-    try:
-        store_num = int(store_code[1:])
-        return 1 <= store_num <= 999
-    except:
-        return False
+    # Verificar prefijos de una letra
+    for prefix, (min_num, max_num) in valid_prefixes.items():
+        if store_code.startswith(prefix):
+            try:
+                num_part = store_code[1:]
+                if num_part and num_part.isdigit():
+                    num = int(num_part)
+                    return min_num <= num <= max_num
+            except:
+                pass
+            return False
+
+    return False
 
 
 async def show_main_menu(bot, chat_id: int, store_code: str):
@@ -51,6 +103,7 @@ async def show_main_menu(bot, chat_id: int, store_code: str):
         types.KeyboardButton("🍗 Comanda"),
         types.KeyboardButton("🔗 Código asociado"),
         types.KeyboardButton("🖨️ Re-Impresión"),
+        types.KeyboardButton("🚚 Asignar Motorizado"),  # NUEVO BOTÓN
         types.KeyboardButton("📅 Auditoría por Rango"),
         types.KeyboardButton("🔄 Cambiar tienda"),
         types.KeyboardButton("❌ Salir")
@@ -61,6 +114,7 @@ async def show_main_menu(bot, chat_id: int, store_code: str):
     markup.row(buttons[4], buttons[5])
     markup.row(buttons[6], buttons[7])
     markup.row(buttons[8], buttons[9])
+    markup.row(buttons[10])
 
     try:
         await bot.send_message(
@@ -1236,3 +1290,448 @@ async def handle_reprint_3attempts(bot, chat_id: int, store_code: str, reprint_t
         )
 
     await show_action_buttons(bot, chat_id, store_code)
+
+
+# ============================================================================
+# FUNCIONES PARA ASIGNACIÓN DE MOTORIZADO (AGREGADAS AL FINAL)
+# ============================================================================
+
+# Diccionario global para almacenar estados de motorizado
+motorizado_temp = {}
+
+
+async def handle_motorizado_order_search(bot, chat_id: int, codigo_app: str, store_code: str, user_sessions: dict):
+    """Busca la orden para asignar motorizado (PASO 1)"""
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"🔍 *Buscando orden {codigo_app}...*",
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error de conexión con la base de datos*",
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+
+        query = """
+            SELECT 
+                m.IDMotorolo,
+                m.nombres,
+                m.apellidos, 
+                m.empresa_motorolo,
+                m.TipoMotorolo,
+                m.telefono,
+                m.documento,
+                ca.codigo_app,
+                ca.estado as estado_app
+            FROM Cabecera_App ca
+            LEFT JOIN Motorolo m ON ca.IDMotorolo = m.IDMotorolo
+            WHERE ca.codigo_app = ?
+        """
+
+        cursor.execute(query, (codigo_app,))
+        orden = cursor.fetchone()
+        cursor.close()
+
+        if not orden:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔄 Intentar con otro código", callback_data='asignar_motorizado'))
+            markup.add(types.InlineKeyboardButton("🏠 Volver al menú", callback_data='menu_principal'))
+
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ *ORDEN NO ENCONTRADA*\n\nNo se encontró la orden `{codigo_app}` en la tienda {store_code}.",
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+            return
+
+        # Guardar en sesión temporal motorizado_temp
+        user_id = None
+        for uid, session in user_sessions.items():
+            if session.get('store_code') == store_code:
+                user_id = uid
+                break
+
+        if user_id:
+            motorizado_temp[user_id] = {
+                'store_code': store_code,
+                'codigo_app': codigo_app,
+                'orden_data': orden,
+                'step': 'waiting_document'
+            }
+
+        motorizado_nombre = f"{orden[1] or ''} {orden[2] or ''}".strip() or "No asignado"
+        empresa = orden[3] or "N/A"
+        tipo = orden[4] or "N/A"
+        telefono = orden[5] or "No registrado"
+        documento = orden[6] or "No registrado"
+        estado_app = orden[8]
+
+        mensaje = f"""
+📋 *INFORMACIÓN DE LA ORDEN*
+
+🔢 *Código:* `{codigo_app}`
+📊 *Estado App:* {estado_app}
+
+👤 *MOTORIZADO ACTUAL:*
+• Nombre: {motorizado_nombre}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+• Documento: {documento}
+
+{'=' * 30}
+
+🚚 *PASO 2/3 - BUSCAR NUEVO MOTORIZADO*
+
+📝 *Ingrese el número de documento del nuevo motorizado:*
+        """
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=mensaje,
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        logger.error(f"Error en handle_motorizado_order_search: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error:* `{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+
+
+async def handle_motorizado_document_search(bot, chat_id: int, documento: str, user_id: int, user_sessions: dict):
+    """Busca motorizados por número de documento (PASO 2) - RECIBE user_id DIRECTAMENTE"""
+
+    logger.info(f"handle_motorizado_document_search - user_id recibido: {user_id}")
+    logger.info(f"motorizado_temp keys: {list(motorizado_temp.keys())}")
+
+    if user_id not in motorizado_temp:
+        logger.error(f"❌ Sesión expirada - user_id={user_id} no en motorizado_temp")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ *Sesión expirada*\n\nPor favor inicie nuevamente desde el menú principal.",
+            parse_mode="Markdown"
+        )
+        return
+
+    store_code = motorizado_temp[user_id].get('store_code')
+    codigo_app = motorizado_temp[user_id].get('codigo_app')
+
+    if not store_code or not codigo_app:
+        logger.error(f"❌ Datos incompletos en motorizado_temp para user_id {user_id}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text="❌ *Datos incompletos*\n\nPor favor inicie nuevamente desde el menú principal.",
+            parse_mode="Markdown"
+        )
+        if user_id in motorizado_temp:
+            del motorizado_temp[user_id]
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"🔍 Buscando motorizados con documento que contenga `{documento}`...",
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error de conexión*",
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+        query = """
+            SELECT IDMotorolo, nombres, apellidos, empresa_motorolo, 
+                   TipoMotorolo, telefono, documento
+            FROM motorolo 
+            WHERE documento LIKE ?
+            ORDER BY nombres, apellidos
+        """
+        cursor.execute(query, (f'%{documento}%',))
+        motorizados = cursor.fetchall()
+        cursor.close()
+
+        if not motorizados:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔄 Intentar con otro documento", callback_data='asignar_motorizado'))
+            markup.add(types.InlineKeyboardButton("🏠 Volver al menú", callback_data='menu_principal'))
+
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ *NO SE ENCONTRARON MOTORIZADOS*\n\nDocumento: `{documento}`\nOrden: `{codigo_app}`",
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+            return
+
+        motorizado_temp[user_id]['motorizados'] = motorizados
+        motorizado_temp[user_id]['step'] = 'select_motorizado'
+
+        # Guardar usando índice numérico para callback simple
+        motorizado_temp[user_id]['temp_ids'] = {}
+
+        markup = types.InlineKeyboardMarkup(row_width=1)
+
+        for idx, m in enumerate(motorizados):
+            id_motorolo = m[0]
+            nombres = m[1] or ""
+            apellidos = m[2] or ""
+            empresa = m[3] or "N/A"
+            tipo = m[4] or "N/A"
+            nombre_completo = f"{nombres} {apellidos}".strip()
+            btn_text = f"👤 {nombre_completo} - {empresa} ({tipo})"
+
+            # Usar solo el índice numérico como callback (SIN guiones, SIN letras)
+            motorizado_temp[user_id]['temp_ids'][str(idx)] = {
+                'id_motorolo': id_motorolo,
+                'codigo_app': codigo_app
+            }
+            callback_data = f"ms_{idx}"  # ms = motorizado_select
+            markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
+
+        markup.add(types.InlineKeyboardButton("🔙 Cancelar", callback_data='menu_principal'))
+
+        mensaje = f"✅ *MOTORIZADOS ENCONTRADOS:* {len(motorizados)}\n\n📦 *Orden:* `{codigo_app}`\n\nSeleccione el motorizado:"
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        logger.error(f"Error en handle_motorizado_document_search: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error:* `{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+
+
+async def handle_motorizado_select_callback(call, idx: str):
+    """Maneja la selección de motorizado (PASO 3 - Confirmación)"""
+    from telebot import types
+
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    bot_instance = get_bot()
+
+    logger.info(f"=== handle_motorizado_select_callback ===")
+    logger.info(f"user_id: {user_id}")
+    logger.info(f"idx recibido: {idx}")
+    logger.info(f"motorizado_temp keys: {list(motorizado_temp.keys())}")
+
+    if user_id not in motorizado_temp:
+        await bot_instance.send_message(chat_id, "❌ *Sesión expirada*", parse_mode="Markdown")
+        return
+
+    logger.info(f"temp_ids disponibles: {list(motorizado_temp[user_id].get('temp_ids', {}).keys())}")
+
+    temp_data = motorizado_temp[user_id].get('temp_ids', {}).get(idx)
+    if not temp_data:
+        await bot_instance.send_message(chat_id, "❌ *Error: No se encontró el motorizado*", parse_mode="Markdown")
+        return
+
+    id_motorolo = temp_data['id_motorolo']
+    codigo_app = temp_data['codigo_app']
+
+    logger.info(f"id_motorolo encontrado: {id_motorolo}")
+    logger.info(f"codigo_app: {codigo_app}")
+
+    motorizados = motorizado_temp[user_id].get('motorizados', [])
+    motorizado_seleccionado = None
+    for m in motorizados:
+        if m[0] == id_motorolo:
+            motorizado_seleccionado = m
+            break
+
+    if not motorizado_seleccionado:
+        await bot_instance.send_message(chat_id, "❌ Error: No se encontró el motorizado", parse_mode="Markdown")
+        return
+
+    motorizado_temp[user_id]['selected_motorizado'] = motorizado_seleccionado
+    motorizado_temp[user_id]['selected_id_motorolo'] = id_motorolo
+
+    nombres = motorizado_seleccionado[1] or ""
+    apellidos = motorizado_seleccionado[2] or ""
+    empresa = motorizado_seleccionado[3] or "N/A"
+    tipo = motorizado_seleccionado[4] or "N/A"
+    telefono = motorizado_seleccionado[5] or "N/A"
+    documento = motorizado_seleccionado[6] or "N/A"
+
+    orden_data = motorizado_temp[user_id].get('orden_data')
+    motorizado_actual = "No asignado"
+    if orden_data and orden_data[1]:
+        motorizado_actual = f"{orden_data[1]} {orden_data[2]}".strip()
+
+    mensaje = f"""
+⚠️ *CONFIRMAR ASIGNACIÓN*
+
+📦 *Orden:* `{codigo_app}`
+
+👤 *Actual:* {motorizado_actual}
+
+{'=' * 30}
+
+👤 *Nuevo Motorizado:*
+• {nombres} {apellidos}
+• Documento: {documento}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+
+¿Confirmar asignación?
+"""
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Sí", callback_data=f"mc_{id_motorolo}_{codigo_app}"),
+        types.InlineKeyboardButton("❌ No", callback_data='menu_principal')
+    )
+    markup.add(types.InlineKeyboardButton("🔄 Buscar otro", callback_data='asignar_motorizado'))
+
+    await bot_instance.edit_message_text(
+        text=mensaje,
+        chat_id=chat_id,
+        message_id=message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app: str):
+    """Ejecuta la asignación del motorizado (PASO 4 - Final)"""
+    from telebot import types
+
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    bot_instance = get_bot()
+
+    logger.info(f"=== handle_motorizado_confirm_callback ===")
+    logger.info(f"user_id: {user_id}")
+    logger.info(f"id_motorolo: {id_motorolo}")
+    logger.info(f"codigo_app: {codigo_app}")
+
+    if user_id not in motorizado_temp:
+        await bot_instance.send_message(chat_id, "❌ *Sesión expirada*", parse_mode="Markdown")
+        return
+
+    store_code = motorizado_temp[user_id]['store_code']
+    motorizado_seleccionado = motorizado_temp[user_id].get('selected_motorizado')
+
+    if not motorizado_seleccionado:
+        await bot_instance.send_message(chat_id, "❌ *Error interno*", parse_mode="Markdown")
+        return
+
+    try:
+        await bot_instance.edit_message_text(
+            text="⏳ *Procesando asignación...*",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await bot_instance.edit_message_text(
+                text="❌ *Error de conexión*",
+                chat_id=chat_id,
+                message_id=message_id,
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+
+        # Verificar la orden antes de actualizar
+        cursor.execute("SELECT codigo_app, IDMotorolo FROM Cabecera_App WHERE codigo_app = ?", (codigo_app,))
+        orden_actual = cursor.fetchone()
+
+        if not orden_actual:
+            await bot_instance.edit_message_text(
+                text=f"❌ *Error:* No se encontró la orden `{codigo_app}`",
+                chat_id=chat_id,
+                message_id=message_id,
+                parse_mode="Markdown"
+            )
+            cursor.close()
+            connection.close()
+            return
+
+        logger.info(f"Orden actual: IDMotorolo = {orden_actual[1] if orden_actual[1] else 'NULL'}")
+
+        # Ejecutar UPDATE
+        cursor.execute("UPDATE Cabecera_App SET IDMotorolo = ? WHERE codigo_app = ?", (id_motorolo, codigo_app))
+        connection.commit()
+
+        logger.info(f"Filas afectadas: {cursor.rowcount}")
+
+        if cursor.rowcount > 0:
+            nombres = motorizado_seleccionado[1] or ""
+            apellidos = motorizado_seleccionado[2] or ""
+            empresa = motorizado_seleccionado[3] or "N/A"
+
+            mensaje = f"""
+✅ *¡MOTORIZADO ASIGNADO!*
+
+📦 *Orden:* `{codigo_app}`
+👤 *Motorizado:* {nombres} {apellidos}
+🏢 *Empresa:* {empresa}
+
+✅ Actualización completada.
+"""
+            usage_logger.log_action(
+                user_id=user_id,
+                username=call.from_user.username or call.from_user.first_name,
+                action="MOTORIZADO_ASIGNADO",
+                store=store_code,
+                details=f"Orden: {codigo_app}, Motorizado ID: {id_motorolo}"
+            )
+        else:
+            mensaje = f"❌ *Error:* No se pudo actualizar la orden `{codigo_app}`.\n\nLa orden no existe o ya está entregada."
+
+        cursor.close()
+        connection.close()
+
+        if user_id in motorizado_temp:
+            del motorizado_temp[user_id]
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🚚 Nueva Asignación", callback_data='asignar_motorizado'))
+        markup.add(types.InlineKeyboardButton("🏠 Menú Principal", callback_data='menu_principal'))
+
+        await bot_instance.edit_message_text(
+            text=mensaje,
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        logger.error(f"Error en handle_motorizado_confirm_callback: {e}")
+        await bot_instance.edit_message_text(
+            text=f"❌ *Error:* `{str(e)[:200]}`",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )

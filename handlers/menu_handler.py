@@ -23,6 +23,10 @@ logger = get_logger(__name__)
 # Instancia global de servicios
 image_service = ImageService()
 
+# Diccionario para almacenar estados de motorizado
+motorizado_temp = {}
+
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el menú principal completo"""
     user_data = context.user_data
@@ -42,6 +46,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🍗 Comanda", callback_data='comanda')],
         [InlineKeyboardButton("🔗 Código asociado", callback_data='codigo_asociado')],
         [InlineKeyboardButton("🖨️ Re-Impresión", callback_data='re_impresion')],
+        [InlineKeyboardButton("🚚 Asignar Motorizado", callback_data='asignar_motorizado')],  # NUEVO BOTÓN
         [InlineKeyboardButton("🔧 Diagnóstico", callback_data='diagnostico')],
         [InlineKeyboardButton("📈 Reportes", callback_data='reportes')],
         [InlineKeyboardButton("🔄 Cambiar tienda", callback_data='cambiar_tienda')],
@@ -75,6 +80,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=menu_text.replace('*', ''),
                 reply_markup=reply_markup
             )
+
 
 async def show_action_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra botones de acción después de una operación"""
@@ -116,6 +122,7 @@ async def show_action_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
                 text=f"🏪 Tienda: {store_code}\n\n¿Qué desea hacer ahora?",
                 reply_markup=reply_markup
             )
+
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja callbacks de botones inline"""
@@ -229,6 +236,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await show_reprint_menu(update, context)
 
+    elif query.data == 'asignar_motorizado':
+        if not store_code:
+            await query.message.reply_text(
+                "Primero debe configurar una tienda. Use el botón '🔄 Cambiar tienda'"
+            )
+            return
+
+        user_data['awaiting_input'] = 'motorizado_order'
+        await query.message.reply_text(
+            "🚚 *ASIGNAR MOTORIZADO*\n\n"
+            "📝 *Ingrese el código de la orden (codigo_app):*\n\n"
+            "Ejemplo: `0007271177-010101`",
+            parse_mode="Markdown"
+        )
+
     elif query.data == 'diagnostico':
         if not store_code:
             await query.message.reply_text(
@@ -246,6 +268,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await handle_reports(update, context)
+
 
 async def show_reprint_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra menú de re-impresión"""
@@ -286,6 +309,427 @@ async def show_reprint_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"🏪 Tienda: {store_code}\n\n🖨️ SELECCIONE TIPO DE RE-IMPRESIÓN:",
                 reply_markup=reply_markup
             )
+
+
+async def handle_motorizado_order_search(update: Update, context: ContextTypes.DEFAULT_TYPE, codigo_app: str):
+    """Busca la orden para asignar motorizado"""
+    user_data = context.user_data
+    store_code = user_data.get('store_code')
+    user_id = update.effective_user.id
+
+    try:
+        await update.message.reply_text(
+            f"🔍 *Buscando orden {codigo_app}...*",
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await update.message.reply_text(
+                "❌ *Error de conexión con la base de datos*",
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+
+        # Consultar información de la orden con motorizado actual
+        query = """
+            SELECT 
+                m.IDMotorolo,
+                m.nombres,
+                m.apellidos, 
+                m.empresa_motorolo,
+                m.TipoMotorolo,
+                m.telefono,
+                m.documento,
+                ca.codigo_app,
+                ca.estado as estado_app,
+                cf.cfac_claveAcceso,
+                s.std_descripcion as estado_factura
+            FROM Cabecera_App ca
+            LEFT JOIN Motorolo m ON ca.IDMotorolo = m.IDMotorolo
+            LEFT JOIN Cabecera_Factura cf ON ca.cfac_id = cf.cfac_id
+            LEFT JOIN Status s ON cf.IDStatus = s.IDStatus
+            WHERE ca.codigo_app = ?
+        """
+
+        cursor.execute(query, (codigo_app,))
+        orden = cursor.fetchone()
+        cursor.close()
+
+        if not orden:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Intentar con otro código", callback_data='asignar_motorizado')],
+                [InlineKeyboardButton("🏠 Volver al menú", callback_data='menu_principal')]
+            ])
+            await update.message.reply_text(
+                f"❌ *ORDEN NO ENCONTRADA*\n\n"
+                f"No se encontró la orden `{codigo_app}` en la tienda {store_code}.\n\n"
+                f"Verifique el código e intente nuevamente.",
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            return
+
+        # Guardar datos de la orden en sesión temporal
+        motorizado_temp[user_id] = {
+            'store_code': store_code,
+            'codigo_app': codigo_app,
+            'orden_data': orden,
+            'step': 'waiting_document'
+        }
+
+        # Obtener datos de la orden
+        id_motorolo_actual = orden[0]
+        motorizado_nombre = f"{orden[1] or ''} {orden[2] or ''}".strip() or "No asignado"
+        empresa = orden[3] or "N/A"
+        tipo = orden[4] or "N/A"
+        telefono = orden[5] or "No registrado"
+        documento = orden[6] or "No registrado"
+        estado_app = orden[8]
+
+        mensaje = f"""
+📋 *INFORMACIÓN DE LA ORDEN*
+
+🔢 *Código:* `{codigo_app}`
+📊 *Estado App:* {estado_app}
+
+👤 *MOTORIZADO ACTUAL:*
+• Nombre: {motorizado_nombre}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+• Documento: {documento}
+"""
+
+        if id_motorolo_actual:
+            mensaje += f"\n🆔 ID Motorizado: `{id_motorolo_actual}`"
+
+        mensaje += f"\n\n{'='*30}\n\n"
+        mensaje += "🚚 *PASO 2/3 - BUSCAR NUEVO MOTORIZADO*\n\n"
+        mensaje += "📝 *Ingrese el número de documento del nuevo motorizado:*\n\n"
+        mensaje += "*(Ejemplo: 12345678 o 1234567890)*"
+
+        user_data['awaiting_input'] = 'motorizado_document'
+        await update.message.reply_text(
+            text=mensaje,
+            parse_mode="Markdown"
+        )
+
+    except Exception as e:
+        logger.error(f"Error buscando orden para motorizado: {e}")
+        await update.message.reply_text(
+            f"❌ *Error al buscar la orden:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+
+
+async def handle_motorizado_document_search(update: Update, context: ContextTypes.DEFAULT_TYPE, documento: str):
+    """Busca motorizados por número de documento"""
+    user_data = context.user_data
+    user_id = update.effective_user.id
+
+    if user_id not in motorizado_temp:
+        await update.message.reply_text(
+            "❌ *Sesión expirada*\n\nPor favor inicie nuevamente desde el menú principal.",
+            parse_mode="Markdown"
+        )
+        return
+
+    store_code = motorizado_temp[user_id]['store_code']
+    codigo_app = motorizado_temp[user_id]['codigo_app']
+
+    try:
+        await update.message.reply_text(
+            f"🔍 Buscando motorizados con documento que contenga `{documento}`...",
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await update.message.reply_text(
+                "❌ *Error de conexión con la base de datos*",
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+
+        # Buscar motorizados por documento
+        query = """
+            SELECT IDMotorolo, nombres, apellidos, empresa_motorolo, 
+                   TipoMotorolo, telefono, documento
+            FROM motorolo 
+            WHERE documento LIKE ?
+            ORDER BY nombres, apellidos
+        """
+
+        cursor.execute(query, (f'%{documento}%',))
+        motorizados = cursor.fetchall()
+        cursor.close()
+
+        if not motorizados:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Intentar con otro documento", callback_data='asignar_motorizado')],
+                [InlineKeyboardButton("🏠 Volver al menú", callback_data='menu_principal')]
+            ])
+            await update.message.reply_text(
+                f"❌ *NO SE ENCONTRARON MOTORIZADOS*\n\n"
+                f"Documento buscado: `{documento}`\n"
+                f"Orden: `{codigo_app}`\n\n"
+                f"Verifique el número de documento e intente nuevamente.",
+                parse_mode="Markdown",
+                reply_markup=keyboard
+            )
+            return
+
+        # Guardar resultados
+        motorizado_temp[user_id]['motorizados'] = motorizados
+        motorizado_temp[user_id]['step'] = 'select_motorizado'
+
+        # Crear teclado con los motorizados encontrados
+        keyboard = []
+
+        for m in motorizados:
+            id_motorolo = m[0]
+            nombres = m[1] or ""
+            apellidos = m[2] or ""
+            empresa = m[3] or "N/A"
+            tipo = m[4] or "N/A"
+
+            nombre_completo = f"{nombres} {apellidos}".strip()
+            btn_text = f"👤 {nombre_completo} - {empresa} ({tipo})"
+            callback_data = f"motorizado_select_{id_motorolo}_{codigo_app}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=callback_data)])
+
+        keyboard.append([InlineKeyboardButton("🔙 Cancelar", callback_data='menu_principal')])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        mensaje = f"""
+✅ *MOTORIZADOS ENCONTRADOS:* {len(motorizados)}
+
+📦 *Orden:* `{codigo_app}`
+
+🚚 *PASO 3/3 - SELECCIONE MOTORIZADO:*
+
+Seleccione el motorizado que desea asignar:
+"""
+
+        user_data['awaiting_input'] = None
+        await update.message.reply_text(
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+
+    except Exception as e:
+        logger.error(f"Error buscando motorizado por documento: {e}")
+        await update.message.reply_text(
+            f"❌ *Error al buscar motorizado:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+
+
+async def handle_motorizado_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, id_motorolo: int, codigo_app: str):
+    """Maneja la selección de motorizado para confirmación"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+
+    if user_id not in motorizado_temp:
+        await query.message.reply_text(
+            "❌ *Sesión expirada*\n\nPor favor inicie nuevamente.",
+            parse_mode="Markdown"
+        )
+        return
+
+    motorizados = motorizado_temp[user_id].get('motorizados', [])
+    motorizado_seleccionado = None
+
+    for m in motorizados:
+        if m[0] == id_motorolo:
+            motorizado_seleccionado = m
+            break
+
+    if not motorizado_seleccionado:
+        await query.message.reply_text("❌ Error: No se encontró el motorizado")
+        return
+
+    # Guardar motorizado seleccionado
+    motorizado_temp[user_id]['selected_motorizado'] = motorizado_seleccionado
+    motorizado_temp[user_id]['step'] = 'confirm'
+
+    nombres = motorizado_seleccionado[1] or ""
+    apellidos = motorizado_seleccionado[2] or ""
+    empresa = motorizado_seleccionado[3] or "N/A"
+    tipo = motorizado_seleccionado[4] or "N/A"
+    telefono = motorizado_seleccionado[5] or "N/A"
+    documento = motorizado_seleccionado[6] or "N/A"
+
+    orden_data = motorizado_temp[user_id].get('orden_data')
+    motorizado_actual = "No asignado"
+    if orden_data and orden_data[1]:
+        motorizado_actual = f"{orden_data[1]} {orden_data[2]}".strip()
+
+    mensaje = f"""
+⚠️ *CONFIRMAR ASIGNACIÓN DE MOTORIZADO*
+
+📦 *Orden:* `{codigo_app}`
+
+👤 *MOTORIZADO ACTUAL:*
+• {motorizado_actual}
+
+{'='*30}
+
+👤 *NUEVO MOTORIZADO:*
+• Nombre: {nombres} {apellidos}
+• Documento: {documento}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+
+{'='*30}
+
+¿Está seguro de que desea asignar este motorizado a la orden?
+"""
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Sí, Asignar", callback_data=f"motorizado_confirm_{id_motorolo}_{codigo_app}")],
+        [InlineKeyboardButton("❌ No, Cancelar", callback_data='menu_principal')],
+        [InlineKeyboardButton("🔄 Buscar otro documento", callback_data='asignar_motorizado')]
+    ])
+
+    await query.edit_message_text(
+        text=mensaje,
+        parse_mode="Markdown",
+        reply_markup=keyboard
+    )
+
+
+async def handle_motorizado_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, id_motorolo: int, codigo_app: str):
+    """Ejecuta la asignación del motorizado en la base de datos"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
+
+    if user_id not in motorizado_temp:
+        await query.message.reply_text(
+            "❌ *Sesión expirada*\n\nPor favor inicie nuevamente.",
+            parse_mode="Markdown"
+        )
+        return
+
+    store_code = motorizado_temp[user_id]['store_code']
+    motorizado_seleccionado = motorizado_temp[user_id].get('selected_motorizado')
+
+    if not motorizado_seleccionado:
+        await query.message.reply_text(
+            "❌ *Error interno*: No se encontraron datos del motorizado seleccionado.",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        await query.edit_message_text(
+            text="⏳ *Procesando asignación...*\n\nActualizando base de datos...",
+            parse_mode="Markdown"
+        )
+
+        connection = db_manager.get_connection(store_code)
+        if not connection:
+            await query.message.reply_text(
+                "❌ *Error de conexión con la base de datos*",
+                parse_mode="Markdown"
+            )
+            return
+
+        cursor = connection.cursor()
+
+        # Actualizar el motorizado en la orden
+        update_query = """
+            UPDATE Cabecera_App 
+            SET IDMotorolo = ? 
+            WHERE codigo_app = ?
+        """
+
+        cursor.execute(update_query, (id_motorolo, codigo_app))
+        connection.commit()
+
+        if cursor.rowcount > 0:
+            nombres = motorizado_seleccionado[1] or ""
+            apellidos = motorizado_seleccionado[2] or ""
+            empresa = motorizado_seleccionado[3] or "N/A"
+            tipo = motorizado_seleccionado[4] or "N/A"
+            telefono = motorizado_seleccionado[5] or "N/A"
+
+            mensaje = f"""
+✅ *¡MOTORIZADO ASIGNADO CON ÉXITO!*
+
+📦 *Orden:* `{codigo_app}`
+
+👤 *MOTORIZADO ASIGNADO:*
+• Nombre: {nombres} {apellidos}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+
+{'='*30}
+
+✅ La orden ha sido actualizada correctamente.
+"""
+
+            # Registrar en log de uso
+            from utils.logger import usage_logger
+            usage_logger.log_action(
+                user_id=user_id,
+                username=query.from_user.username or query.from_user.first_name,
+                action="MOTORIZADO_ASIGNADO",
+                store=store_code,
+                details=f"Orden: {codigo_app}, Motorizado ID: {id_motorolo}"
+            )
+
+        else:
+            mensaje = f"""
+❌ *ERROR AL ASIGNAR MOTORIZADO*
+
+No se pudo actualizar la orden `{codigo_app}`.
+
+Posibles causas:
+• La orden no existe
+• La orden ya fue entregada
+• Problemas de conexión con la base de datos
+
+Verifique el código de la orden e intente nuevamente.
+"""
+
+        # Limpiar sesión temporal
+        if user_id in motorizado_temp:
+            del motorizado_temp[user_id]
+
+        # Mostrar opciones finales
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚚 Nueva Asignación", callback_data='asignar_motorizado')],
+            [InlineKeyboardButton("🏠 Menú Principal", callback_data='menu_principal')]
+        ])
+
+        await query.edit_message_text(
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+
+    except Exception as e:
+        logger.error(f"Error ejecutando asignación de motorizado: {e}")
+        await query.message.reply_text(
+            f"❌ *Error al asignar motorizado:*\n`{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
+
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja las entradas de texto del usuario"""
@@ -489,6 +933,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif awaiting == 'codigo_asociado':
         await handle_associated_code(update, context, text)
 
+    elif awaiting == 'motorizado_order':
+        await handle_motorizado_order_search(update, context, text)
+
+    elif awaiting == 'motorizado_document':
+        await handle_motorizado_document_search(update, context, text)
+
     elif awaiting == 'invoice_id':
         # Guardar ID y mostrar opciones
         user_data['last_invoice_id'] = text
@@ -516,6 +966,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🏠 Menú principal", callback_data='menu_principal')]
             ])
         )
+
 
 # Funciones adaptadas de tu código original
 async def handle_order_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, order_number: str):
@@ -590,6 +1041,7 @@ No se encontró la orden `{order_number}` en la tienda {store_code}.
 
     user_data['awaiting_input'] = None
     await show_action_buttons(update, context)
+
 
 async def handle_order_audit(update: Update, context: ContextTypes.DEFAULT_TYPE, order_pattern: str):
     """Maneja auditoría de órdenes"""
@@ -670,6 +1122,7 @@ No se encontraron órdenes con el patrón: `{order_pattern}`
     user_data['awaiting_input'] = None
     await show_action_buttons(update, context)
 
+
 async def handle_associated_code(update: Update, context: ContextTypes.DEFAULT_TYPE, cfac_id: str):
     """Maneja obtención de código asociado"""
     user_data = context.user_data
@@ -739,6 +1192,7 @@ No se encontraron códigos asociados para: `{cfac_id}`
     user_data['awaiting_input'] = None
     await show_action_buttons(update, context)
 
+
 async def handle_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja diagnóstico completo del sistema"""
     user_data = context.user_data
@@ -763,19 +1217,19 @@ async def handle_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
 
         # Linux
-        linux_test = connection_info['linux_test']
-        linux_status = "✅ CONECTADO" if linux_test['success'] else "❌ FALLIDO"
+        linux_test = connection_info.get('linux_test', {'success': False})
+        linux_status = "✅ CONECTADO" if linux_test.get('success') else "❌ FALLIDO"
         diagnostic_text += f"• Linux: {linux_status}\n"
 
         # Windows
-        windows_test = connection_info['windows_test']
-        windows_status = "✅ CONECTADO" if windows_test['success'] else "❌ FALLIDO"
+        windows_test = connection_info.get('windows_test', {'success': False})
+        windows_status = "✅ CONECTADO" if windows_test.get('success') else "❌ FALLIDO"
         diagnostic_text += f"• Windows: {windows_status}\n"
 
         # Servicios
         diagnostic_text += f"\n🖼️ *SERVICIO DE IMÁGENES:*\n"
         diagnostic_text += f"• Estado: {'✅ DISPONIBLE' if image_service.is_available() else '❌ NO DISPONIBLE'}\n"
-        diagnostic_text += f"• Método: {'Selenium' if image_service.is_selenium_available else 'Imgkit'}\n"
+        diagnostic_text += f"• Método: {'Selenium' if hasattr(image_service, 'is_selenium_available') and image_service.is_selenium_available else 'Imgkit'}\n"
 
         diagnostic_text += f"\n🕒 *Diagnóstico realizado:* {datetime.now().strftime('%H:%M:%S')}"
 
@@ -794,6 +1248,7 @@ async def handle_diagnostic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await show_action_buttons(update, context)
+
 
 async def handle_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja reportes del sistema"""
@@ -816,8 +1271,8 @@ Fecha: {report_date}
 *INFORMACIÓN DE CONEXIÓN:*
 • Base de datos: `{connection_info['database_name']}`
 • Sistema detectado: {connection_info['recommended_os'].upper() if connection_info['recommended_os'] else 'NO DETECTADO'}
-• Linux: {'✅ CONECTADO' if connection_info['linux_test']['success'] else '❌ FALLIDO'}
-• Windows: {'✅ CONECTADO' if connection_info['windows_test']['success'] else '❌ FALLIDO'}
+• Linux: {'✅ CONECTADO' if connection_info.get('linux_test', {}).get('success') else '❌ FALLIDO'}
+• Windows: {'✅ CONECTADO' if connection_info.get('windows_test', {}).get('success') else '❌ FALLIDO'}
 
 *ESTADO DEL SISTEMA:*
 • Tienda configurada: ✅

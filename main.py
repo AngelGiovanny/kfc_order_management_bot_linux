@@ -5,6 +5,7 @@ main.py - Bot principal de gestión KFC
 import asyncio
 import os
 import sys
+import base64
 from datetime import datetime
 import traceback
 
@@ -25,7 +26,8 @@ from handlers.menu_handler_combined import (
     validate_store_code, handle_reprint_3attempts,
     handle_rango_seleccion, procesar_hora_inicio_rango,
     procesar_hora_fin_rango, procesar_fecha_manual_rango,
-    procesar_periodo_seleccion
+    procesar_periodo_seleccion, handle_motorizado_select_callback,
+    handle_motorizado_confirm_callback, motorizado_temp, set_bot_instance
 )
 from handlers.report_handler import handle_report_command
 from core.image_service import image_service
@@ -37,6 +39,10 @@ if not BOT_TOKEN:
     sys.exit(1)
 
 bot = AsyncTeleBot(BOT_TOKEN)
+
+# Asignar la instancia del bot al módulo de handlers para usar en callbacks
+set_bot_instance(bot)
+
 user_sessions = {}
 
 
@@ -56,32 +62,74 @@ class UserState:
     WAITING_RANGO_FECHA_FIN = "waiting_rango_fecha_fin"
     WAITING_RANGO_HORA_INICIO = "waiting_rango_hora_inicio"
     WAITING_RANGO_HORA_FIN = "waiting_rango_hora_fin"
+    WAITING_MOTORIZADO_ORDER = "waiting_motorizado_order"
+    WAITING_MOTORIZADO_DOCUMENT = "waiting_motorizado_document"
+
+
+def validate_cfac_id(cfac_id: str) -> bool:
+    """Valida si un CFAC_ID tiene formato válido MULTIMARCA"""
+    if not cfac_id:
+        return False
+    if len(cfac_id) < 10:
+        return False
+    # Ahora acepta cualquier letra al inicio (K, M, J, T, G, A, E, V, I, R, B, C)
+    # Formato: [LETRA][3 dígitos][F o N][resto]
+    if len(cfac_id) >= 5 and cfac_id[4] not in ['F', 'N']:
+        return False
+    return True
 
 
 async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, username: str):
-    """Maneja la configuración inicial de una tienda"""
+    """Maneja la configuración inicial de una tienda - CORREGIDO"""
     try:
+        # Detectar SO primero
         os_type, address = OSDetector.detect_os(store_code, quick=True)
+        logger.info(f"Tienda {store_code}: SO detectado = {os_type}, IP = {address}")
+
+        # Obtener información de conexión
         connection_info = db_manager.get_connection_info(store_code)
 
-        if connection_info['recommended_os']:
+        # Si se detectó un SO, probar conexión con él
+        if os_type:
+            conn = db_manager.get_connection(store_code, os_type)
+            if conn:
+                conn.close()
+                usage_logger.log_action(
+                    user_id=user_id,
+                    username=username,
+                    action="STORE_SETUP_SUCCESS",
+                    store=store_code,
+                    details=f"Sistema: {os_type}, Dirección: {address}, BD: {connection_info.get('database_name', 'N/A')}"
+                )
+                logger.info(f"✅ Configuración exitosa para {store_code} usando {os_type}")
+                return os_type
+
+        # Si falla, intentar con el otro SO
+        other_os = "linux" if os_type == "windows" else "windows"
+        logger.info(f"Intentando con {other_os} para {store_code}")
+        conn = db_manager.get_connection(store_code, other_os)
+        if conn:
+            conn.close()
             usage_logger.log_action(
                 user_id=user_id,
                 username=username,
                 action="STORE_SETUP_SUCCESS",
                 store=store_code,
-                details=f"Sistema: {os_type}, Dirección: {address}, BD: {connection_info['database_name']}"
+                details=f"Sistema: {other_os}, Dirección: {address}, BD: {connection_info.get('database_name', 'N/A')}"
             )
-            return connection_info['recommended_os']
-        else:
-            usage_logger.log_action(
-                user_id=user_id,
-                username=username,
-                action="STORE_SETUP_FAILED",
-                store=store_code,
-                details=f"Error: No se pudo conectar. OS detectado: {os_type}"
-            )
-            return None
+            logger.info(f"✅ Configuración exitosa para {store_code} usando {other_os}")
+            return other_os
+
+        # No se pudo conectar
+        logger.error(f"❌ No se pudo conectar a {store_code} con ningún SO")
+        usage_logger.log_action(
+            user_id=user_id,
+            username=username,
+            action="STORE_SETUP_FAILED",
+            store=store_code,
+            details=f"Error: No se pudo conectar. OS detectado: {os_type}"
+        )
+        return None
 
     except Exception as e:
         logger.error(f"Error en setup de tienda: {e}")
@@ -115,19 +163,6 @@ async def show_reprint_menu(bot, chat_id: int, store_code: str):
     )
 
 
-def validate_cfac_id(cfac_id: str) -> bool:
-    """Valida si un CFAC_ID tiene formato válido"""
-    if not cfac_id:
-        return False
-    if len(cfac_id) < 10:
-        return False
-    if not cfac_id.startswith('K'):
-        return False
-    if cfac_id[4] not in ['F', 'N']:
-        return False
-    return True
-
-
 @bot.message_handler(commands=['start', 'inicio', 'help', 'ayuda'])
 async def start_command(message):
     """Maneja el comando /start"""
@@ -154,15 +189,25 @@ async def start_command(message):
     }
 
     welcome_text = """
-🍗 *SISTEMA KFC - GESTIÓN DE ÓRDENES*
+    🍗 *SISTEMA MULTIMARCA - GESTIÓN DE ÓRDENES*
 
-📋 *Por favor, ingrese el código de la tienda:*
+    📋 *Por favor, ingrese el código de la tienda:*
 
-• Formato: K seguido de 3 números
-• Ejemplo: K025, K180, K004
+    • KFC (ej: K025)
+    • Menestras del Negro (ej: M012)
+    • Cajun (ej: J030)
+    • Tropi (ej: T045)
+    • Gus (ej: G078)
+    • American Deli (ej: A012)
+    • Español (ej: E056)
+    • Juan Valdez (ej: V010)
+    • Il Cappo (ej: I089)
+    • Cara Res (ej: R034)
+    • Baskin Robbins (ej: BS05)
+    • Cinnabon (ej: CN12)
 
-⚠️ _Puede tomar unos segundos la primera vez_
-    """
+    ⚠️ _Puede tomar unos segundos la primera vez_
+        """
 
     await bot.send_message(
         chat_id=chat_id,
@@ -199,6 +244,42 @@ async def handle_callback_query(call):
 
     logger.info(f"Callback general de usuario {user_id}: {call.data}")
 
+    # Manejar callbacks de motorizado con formato corto
+    if call.data.startswith('ms_'):
+        # Formato: ms_0, ms_1, ms_2
+        idx = call.data.replace('ms_', '')
+        logger.info(f"Motorizado seleccionado - índice: {idx}")
+        await handle_motorizado_select_callback(call, idx)
+        await bot.answer_callback_query(call.id)
+        return
+
+    if call.data.startswith('mc_'):
+        # Formato: mc_{id_motorolo}_{codigo_app}
+        parts = call.data.split('_')
+        if len(parts) >= 3:
+            id_motorolo = parts[1]
+            codigo_app = '_'.join(parts[2:])
+            logger.info(f"Confirmando motorizado - ID: {id_motorolo}, Orden: {codigo_app}")
+            await handle_motorizado_confirm_callback(call, id_motorolo, codigo_app)
+        await bot.answer_callback_query(call.id)
+        return
+
+    # Mantener los callbacks antiguos por compatibilidad (opcional)
+    if call.data.startswith('motorizado_select_'):
+        temp_id = call.data.replace('motorizado_select_', '')
+        await handle_motorizado_select_callback(call, temp_id)
+        await bot.answer_callback_query(call.id)
+        return
+
+    if call.data.startswith('motorizado_confirm_'):
+        parts = call.data.split('_')
+        if len(parts) >= 4:
+            id_motorolo = parts[2]
+            codigo_app = '_'.join(parts[3:])
+            await handle_motorizado_confirm_callback(call, id_motorolo, codigo_app)
+        await bot.answer_callback_query(call.id)
+        return
+
     session = user_sessions.get(user_id)
     if not session:
         await bot.send_message(
@@ -215,7 +296,6 @@ async def handle_callback_query(call):
         await handle_rango_seleccion(bot, call, store_code, user_sessions)
 
     await bot.answer_callback_query(call.id)
-
 
 @bot.message_handler(func=lambda message: True)
 async def handle_all_messages(message):
@@ -297,7 +377,20 @@ async def handle_all_messages(message):
         else:
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *Código inválido*\n\nFormato: K001 a K999\nEjemplo: K025, K004",
+                text="❌ *Código inválido*\n\n"
+                     "Formatos válidos:\n"
+                     "• KFC: K025\n"
+                     "• Menestras del Negro: M012\n"
+                     "• Cajun: J030\n"
+                     "• Tropi: T045\n"
+                     "• Gus: G078\n"
+                     "• American Deli: A012\n"
+                     "• Español: E056\n"
+                     "• Juan Valdez: V010\n"
+                     "• Il Cappo: I089\n"
+                     "• Cara Res: R034\n"
+                     "• Baskin Robbins: BS05\n"
+                     "• Cinnabon: CN12",
                 parse_mode="Markdown"
             )
         return
@@ -375,6 +468,16 @@ async def handle_all_messages(message):
 
         elif text == "📅 Auditoría por Rango":
             await handle_auditoria_rango(bot, chat_id, store_code)
+
+        elif text == "🚚 Asignar Motorizado":
+            session['state'] = UserState.WAITING_MOTORIZADO_ORDER
+            await bot.send_message(
+                chat_id=chat_id,
+                text="🚚 *ASIGNAR MOTORIZADO*\n\n"
+                     "📝 *Ingrese el código de la orden (codigo_app):*\n\n"
+                     "Ejemplo: `0007271177-010101`",
+                parse_mode="Markdown"
+            )
 
         elif text == "🔄 Cambiar tienda":
             session['state'] = UserState.WAITING_STORE
@@ -478,7 +581,7 @@ async def handle_all_messages(message):
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX\nEjemplo: K096F001779631",
+                text="❌ *CFAC_ID inválido*\n\nFormato esperado: [LETRA]XXX[F o N]XXXXXXXXXX\nEjemplo: K096F001779631, M061F000234440",
                 parse_mode="Markdown"
             )
             return
@@ -500,7 +603,7 @@ async def handle_all_messages(message):
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXNXXXXXXXXXX\nEjemplo: K096N000123456",
+                text="❌ *CFAC_ID inválido*\n\nFormato esperado: [LETRA]XXX[F o N]XXXXXXXXXX\nEjemplo: K096N000123456, M061N000123456",
                 parse_mode="Markdown"
             )
             return
@@ -522,7 +625,7 @@ async def handle_all_messages(message):
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX\nEjemplo: K096F001779631",
+                text="❌ *CFAC_ID inválido*\n\nFormato esperado: [LETRA]XXX[F o N]XXXXXXXXXX\nEjemplo: K096F001779631",
                 parse_mode="Markdown"
             )
             return
@@ -544,7 +647,7 @@ async def handle_all_messages(message):
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX o KXXXNXXXXXXXXXX",
+                text="❌ *CFAC_ID inválido*\n\nFormato esperado: [LETRA]XXX[F o N]XXXXXXXXXX\nEjemplo: K096F001779631, M061F000234440",
                 parse_mode="Markdown"
             )
             return
@@ -600,7 +703,7 @@ async def handle_all_messages(message):
         if not validate_cfac_id(text):
             await bot.send_message(
                 chat_id=chat_id,
-                text="❌ *CFAC_ID inválido*\n\nFormato esperado: KXXXFXXXXXXXXXX para facturas/comandas\nKXXXNXXXXXXXXXX para notas de crédito",
+                text="❌ *CFAC_ID inválido*\n\nFormato esperado: [LETRA]XXX[F o N]XXXXXXXXXX\nEjemplo: K096F001779631, M061F000234440",
                 parse_mode="Markdown"
             )
             return
@@ -615,6 +718,58 @@ async def handle_all_messages(message):
         session['state'] = UserState.IN_MENU
         if 'reprint_type' in session:
             del session['reprint_type']
+        return
+
+    # ============================================
+    # WAITING_MOTORIZADO_ORDER
+    # ============================================
+    if current_state == UserState.WAITING_MOTORIZADO_ORDER:
+        usage_logger.log_action(
+            user_id=user_id,
+            username=username,
+            action="MOTORIZADO_ORDER_SEARCH",
+            store=store_code,
+            details=f"Orden: {text}"
+        )
+        # Guardar directamente en motorizado_temp con el user_id actual
+        motorizado_temp[user_id] = {
+            'store_code': store_code,
+            'codigo_app': text,
+            'step': 'waiting_order'
+        }
+        logger.info(f"✅ Motorizado temp guardado para user_id {user_id}: orden={text}")
+
+        from handlers.menu_handler_combined import handle_motorizado_order_search
+        await handle_motorizado_order_search(bot, chat_id, text, store_code, user_sessions)
+        session['state'] = UserState.WAITING_MOTORIZADO_DOCUMENT
+        return
+
+    # ============================================
+    # WAITING_MOTORIZADO_DOCUMENT
+    # ============================================
+    if current_state == UserState.WAITING_MOTORIZADO_DOCUMENT:
+        usage_logger.log_action(
+            user_id=user_id,
+            username=username,
+            action="MOTORIZADO_DOCUMENT_SEARCH",
+            store=store_code,
+            details=f"Documento: {text}"
+        )
+
+        # Verificar que existe en motorizado_temp
+        if user_id not in motorizado_temp:
+            logger.error(f"❌ user_id {user_id} no encontrado en motorizado_temp. Keys: {list(motorizado_temp.keys())}")
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Sesión expirada*\n\nPor favor inicie nuevamente desde el menú principal.",
+                parse_mode="Markdown"
+            )
+            session['state'] = UserState.IN_MENU
+            await show_main_menu(bot, chat_id, store_code)
+            return
+
+        from handlers.menu_handler_combined import handle_motorizado_document_search
+        await handle_motorizado_document_search(bot, chat_id, text, user_id, user_sessions)
         return
 
     # ============================================

@@ -6,7 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="1231170c-7f36-45e1-a1eb-4ad53f5a3829" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/print_service_3attempts.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/print_service_3attempts.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/database.py" beforeDir="false" afterPath="$PROJECT_DIR$/config/database.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/os_detector.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/os_detector.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/menu_handler.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/menu_handler.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/menu_handler_combined.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/menu_handler_combined.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,21 +52,22 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "DefaultHtmlFileTemplate": "HTML File",
-    "Python.menu_handler_combined.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "main",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
+    &quot;Python.menu_handler_combined.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/angel.gualotuna/Downloads/kfc_order_management_bot_linux-main&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\angel.gualotuna\OneDrive - International Food Services - Grupo KFC\Documentos\APP\Desarrollos 2026\Bots\KFC_W_Linux\kfc_order_management_bot\core" />
@@ -101,7 +106,35 @@
       <workItem from="1773691697352" duration="1112000" />
       <workItem from="1773773529477" duration="1943000" />
       <workItem from="1773858389861" duration="558000" />
-      <workItem from="1773932146628" duration="11967000" />
+      <workItem from="1773932146628" duration="13376000" />
+      <workItem from="1774191556662" duration="2875000" />
+      <workItem from="1774380175009" duration="576000" />
+      <workItem from="1774465149802" duration="2374000" />
+      <workItem from="1774527790567" duration="618000" />
+      <workItem from="1774785443695" duration="1912000" />
+      <workItem from="1774872118611" duration="606000" />
+      <workItem from="1774958816027" duration="765000" />
+      <workItem from="1775243903225" duration="21000" />
+      <workItem from="1775244051012" duration="677000" />
+      <workItem from="1775423032056" duration="2165000" />
+      <workItem from="1775502779964" duration="577000" />
+      <workItem from="1775577983124" duration="3201000" />
+      <workItem from="1776093609875" duration="1166000" />
+      <workItem from="1776441483333" duration="707000" />
+      <workItem from="1776954502645" duration="1995000" />
+      <workItem from="1777115867796" duration="587000" />
+      <workItem from="1777132420756" duration="1139000" />
+      <workItem from="1777202380171" duration="1751000" />
+      <workItem from="1777291246194" duration="1182000" />
+      <workItem from="1777377948013" duration="1801000" />
+      <workItem from="1777663892179" duration="316000" />
+      <workItem from="1777735192047" duration="567000" />
+      <workItem from="1777808982325" duration="1243000" />
+      <workItem from="1777896127400" duration="3302000" />
+      <workItem from="1778002625677" duration="835000" />
+      <workItem from="1778068801450" duration="250000" />
+      <workItem from="1778069111270" duration="2012000" />
+      <workItem from="1778079644039" duration="17643000" />
     </task>
     <servers />
   </component>
