@@ -1,11 +1,14 @@
 """
 main.py - Bot principal de gestión KFC
+VERSIÓN CORREGIDA - SIN DEPENDENCIA DE ODBC PARA SETUP
 """
 
 import asyncio
 import os
 import sys
 import base64
+import subprocess
+import platform
 from datetime import datetime
 import traceback
 
@@ -80,56 +83,46 @@ def validate_cfac_id(cfac_id: str) -> bool:
 
 
 async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, username: str):
-    """Maneja la configuración inicial de una tienda - CORREGIDO"""
+    """
+    Maneja la configuración inicial de una tienda - VERSIÓN SIN ODBC
+    Solo detecta el SO y valida conectividad por ping
+    """
     try:
-        # Detectar SO primero
+        # Detectar SO primero (esto no necesita BD)
         os_type, address = OSDetector.detect_os(store_code, quick=True)
         logger.info(f"Tienda {store_code}: SO detectado = {os_type}, IP = {address}")
 
-        # Obtener información de conexión
-        connection_info = db_manager.get_connection_info(store_code)
+        # Verificar conectividad básica (ping)
+        system = platform.system()
+        param = '-n' if system == 'Windows' else '-c'
 
-        # Si se detectó un SO, probar conexión con él
-        if os_type:
-            conn = db_manager.get_connection(store_code, os_type)
-            if conn:
-                conn.close()
-                usage_logger.log_action(
-                    user_id=user_id,
-                    username=username,
-                    action="STORE_SETUP_SUCCESS",
-                    store=store_code,
-                    details=f"Sistema: {os_type}, Dirección: {address}, BD: {connection_info.get('database_name', 'N/A')}"
-                )
-                logger.info(f"✅ Configuración exitosa para {store_code} usando {os_type}")
-                return os_type
-
-        # Si falla, intentar con el otro SO
-        other_os = "linux" if os_type == "windows" else "windows"
-        logger.info(f"Intentando con {other_os} para {store_code}")
-        conn = db_manager.get_connection(store_code, other_os)
-        if conn:
-            conn.close()
-            usage_logger.log_action(
-                user_id=user_id,
-                username=username,
-                action="STORE_SETUP_SUCCESS",
-                store=store_code,
-                details=f"Sistema: {other_os}, Dirección: {address}, BD: {connection_info.get('database_name', 'N/A')}"
+        try:
+            result = subprocess.run(
+                ['ping', param, '2', address],
+                capture_output=True,
+                text=True,
+                timeout=5
             )
-            logger.info(f"✅ Configuración exitosa para {store_code} usando {other_os}")
-            return other_os
+            host_online = result.returncode == 0
+            if host_online:
+                logger.info(f"✅ Ping exitoso a {address}")
+            else:
+                logger.warning(f"⚠️ Ping fallido a {address}, pero continuamos (puede ser firewall)")
+        except Exception as e:
+            logger.warning(f"⚠️ Error en ping: {e}, continuando...")
+            host_online = True  # Asumimos que está online
 
-        # No se pudo conectar
-        logger.error(f"❌ No se pudo conectar a {store_code} con ningún SO")
+        # Registrar éxito sin conexión a BD
         usage_logger.log_action(
             user_id=user_id,
             username=username,
-            action="STORE_SETUP_FAILED",
+            action="STORE_SETUP_SUCCESS",
             store=store_code,
-            details=f"Error: No se pudo conectar. OS detectado: {os_type}"
+            details=f"Sistema detectado: {os_type}, Dirección: {address}"
         )
-        return None
+
+        logger.info(f"✅ Configuración exitosa para {store_code} usando {os_type}")
+        return os_type
 
     except Exception as e:
         logger.error(f"Error en setup de tienda: {e}")
@@ -264,7 +257,7 @@ async def handle_callback_query(call):
         await bot.answer_callback_query(call.id)
         return
 
-    # Mantener los callbacks antiguos por compatibilidad (opcional)
+    # Mantener los callbacks antiguos por compatibilidad
     if call.data.startswith('motorizado_select_'):
         temp_id = call.data.replace('motorizado_select_', '')
         await handle_motorizado_select_callback(call, temp_id)
@@ -297,6 +290,7 @@ async def handle_callback_query(call):
 
     await bot.answer_callback_query(call.id)
 
+
 @bot.message_handler(func=lambda message: True)
 async def handle_all_messages(message):
     """Maneja todos los mensajes"""
@@ -318,7 +312,7 @@ async def handle_all_messages(message):
     session['last_activity'] = datetime.now()
 
     # ============================================
-    # ESTADOS DE AUDITORÍA POR RANGO (DEBEN IR PRIMERO)
+    # ESTADOS DE AUDITORÍA POR RANGO
     # ============================================
     if current_state == UserState.WAITING_RANGO_FECHA_INICIO:
         logger.info(f"Procesando fecha inicio manual: {text}")
