@@ -5,12 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1231170c-7f36-45e1-a1eb-4ad53f5a3829" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/test_print.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/get_json_from_bd.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_api.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_with_real_json.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/print_service_3attempts.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/print_service_3attempts.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -137,7 +138,7 @@
       <workItem from="1778079644039" duration="19689000" />
       <workItem from="1778155825204" duration="418000" />
       <workItem from="1778526620021" duration="304000" />
-      <workItem from="1781806031312" duration="3370000" />
+      <workItem from="1781806031312" duration="7213000" />
     </task>
     <servers />
   </component>
