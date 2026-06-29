@@ -1,6 +1,6 @@
 """
 main.py - Bot principal de gestión KFC
-VERSIÓN CORREGIDA - SIN DEPENDENCIA DE ODBC PARA SETUP
+VERSIÓN CORREGIDA - CON FLUJO DE MOTORIZADO COMPLETO
 """
 
 import asyncio
@@ -80,6 +80,118 @@ def validate_cfac_id(cfac_id: str) -> bool:
     if len(cfac_id) >= 5 and cfac_id[4] not in ['F', 'N']:
         return False
     return True
+
+
+async def handle_motorizado_final_confirm(bot, chat_id: int, user_id: int, id_motorolo: str, codigo_app: str):
+    """
+    PASO FINAL: Muestra confirmación antes de asignar el motorizado
+    """
+    try:
+        logger.info(f"🔍 Confirmación final para motorizado {id_motorolo} en orden {codigo_app}")
+
+        # Verificar sesión
+        if user_id not in motorizado_temp:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Sesión expirada*\n\nPor favor inicie nuevamente desde el menú principal.",
+                parse_mode="Markdown"
+            )
+            return
+
+        store_code = motorizado_temp[user_id].get('store_code')
+        if not store_code:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error: No se encontró la tienda*",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Buscar el motorizado seleccionado
+        motorizados = motorizado_temp[user_id].get('motorizados', [])
+        motorizado_seleccionado = None
+        for m in motorizados:
+            if m[0] == id_motorolo:
+                motorizado_seleccionado = m
+                break
+
+        if not motorizado_seleccionado:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error: No se encontró el motorizado seleccionado*",
+                parse_mode="Markdown"
+            )
+            return
+
+        # Datos del motorizado seleccionado
+        nombres = motorizado_seleccionado[1] or ""
+        apellidos = motorizado_seleccionado[2] or ""
+        empresa = motorizado_seleccionado[3] or "N/A"
+        tipo = motorizado_seleccionado[4] or "N/A"
+        telefono = motorizado_seleccionado[5] or "N/A"
+        documento = motorizado_seleccionado[6] or "N/A"
+
+        # Motorizado actual
+        orden_data = motorizado_temp[user_id].get('orden_data')
+        motorizado_actual = "No asignado"
+        if orden_data and orden_data[1]:
+            motorizado_actual = f"{orden_data[1]} {orden_data[2]}".strip()
+
+        mensaje = f"""
+⚠️ *CONFIRMAR ASIGNACIÓN DE MOTORIZADO*
+
+📦 *Orden:* `{codigo_app}`
+
+👤 *MOTORIZADO ACTUAL:*
+• {motorizado_actual}
+
+{'=' * 30}
+
+👤 *NUEVO MOTORIZADO:*
+• Nombre: {nombres} {apellidos}
+• Documento: {documento}
+• Empresa: {empresa}
+• Tipo: {tipo}
+• Teléfono: {telefono}
+
+{'=' * 30}
+
+¿Está seguro de que desea asignar este motorizado a la orden?
+"""
+
+        # Botones de confirmación
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton(
+                "✅ Sí, Asignar",
+                callback_data=f"mc_{id_motorolo}_{codigo_app}"
+            ),
+            types.InlineKeyboardButton(
+                "❌ No, Cancelar",
+                callback_data="menu_principal"
+            )
+        )
+        markup.add(
+            types.InlineKeyboardButton(
+                "🔄 Buscar otro documento",
+                callback_data="asignar_motorizado"
+            )
+        )
+
+        await bot.send_message(
+            chat_id=chat_id,
+            text=mensaje,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+
+    except Exception as e:
+        logger.error(f"Error en confirmación final de motorizado: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ *Error:* `{str(e)[:200]}`",
+            parse_mode="Markdown"
+        )
 
 
 async def handle_store_setup(bot, chat_id: int, store_code: str, user_id: int, username: str):
@@ -237,27 +349,103 @@ async def handle_callback_query(call):
 
     logger.info(f"Callback general de usuario {user_id}: {call.data}")
 
-    # Manejar callbacks de motorizado con formato corto
+    # ============================================================
+    # ✅ MANEJAR CALLBACKS DE MOTORIZADO - SELECCIÓN (CORREGIDO)
+    # ============================================================
     if call.data.startswith('ms_'):
-        # Formato: ms_0, ms_1, ms_2
         idx = call.data.replace('ms_', '')
         logger.info(f"Motorizado seleccionado - índice: {idx}")
-        await handle_motorizado_select_callback(call, idx)
+
+        # Obtener datos del motorizado seleccionado
+        if user_id in motorizado_temp:
+            temp_ids = motorizado_temp[user_id].get('temp_ids', {})
+            temp_data = temp_ids.get(idx)
+            if temp_data:
+                id_motorolo = temp_data['id_motorolo']
+                codigo_app = temp_data['codigo_app']
+                logger.info(f"✅ Motorizado seleccionado: ID={id_motorolo}, Orden={codigo_app}")
+
+                # ✅ PASO FINAL: Mostrar confirmación
+                await handle_motorizado_final_confirm(bot, chat_id, user_id, id_motorolo, codigo_app)
+            else:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ *Error: No se encontraron datos del motorizado*",
+                    parse_mode="Markdown"
+                )
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Sesión expirada*\n\nPor favor inicie nuevamente desde el menú principal.",
+                parse_mode="Markdown"
+            )
+
         await bot.answer_callback_query(call.id)
         return
 
+    # ============================================================
+    # ✅ MANEJAR CALLBACKS DE MOTORIZADO - CONFIRMACIÓN FINAL (CORREGIDO)
+    # ============================================================
     if call.data.startswith('mc_'):
-        # Formato: mc_{id_motorolo}_{codigo_app}
         parts = call.data.split('_')
         if len(parts) >= 3:
             id_motorolo = parts[1]
             codigo_app = '_'.join(parts[2:])
-            logger.info(f"Confirmando motorizado - ID: {id_motorolo}, Orden: {codigo_app}")
+            logger.info(f"✅ Confirmando asignación - ID: {id_motorolo}, Orden: {codigo_app}")
+
+            # ✅ PASO IMPORTANTE: Verificar que la sesión existe
+            if user_id not in motorizado_temp:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ *Sesión expirada*\n\nPor favor inicie nuevamente el proceso de asignación.",
+                    parse_mode="Markdown"
+                )
+                await bot.answer_callback_query(call.id)
+                return
+
+            # ✅ SI LA SESIÓN EXISTE, PERO NO TIENE selected_motorizado, RECUPERARLO
+            if 'selected_motorizado' not in motorizado_temp[user_id]:
+                logger.warning(f"⚠️ selected_motorizado no encontrado en sesión para user_id {user_id}")
+                logger.info(f"🔍 Datos en sesión: {list(motorizado_temp[user_id].keys())}")
+
+                # Intentar recuperar de motorizados
+                motorizados = motorizado_temp[user_id].get('motorizados', [])
+                motorizado_encontrado = None
+                for m in motorizados:
+                    if m[0] == id_motorolo:
+                        motorizado_encontrado = m
+                        break
+
+                if motorizado_encontrado:
+                    motorizado_temp[user_id]['selected_motorizado'] = motorizado_encontrado
+                    logger.info(f"✅ Motorizado recuperado de motorizados: {motorizado_encontrado[1]} {motorizado_encontrado[2]}")
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"❌ *Error: No se encontró el motorizado seleccionado*\n\n"
+                             f"ID: {id_motorolo}\n"
+                             f"Orden: {codigo_app}\n\n"
+                             f"Por favor, inicie nuevamente el proceso de asignación.",
+                        parse_mode="Markdown"
+                    )
+                    await bot.answer_callback_query(call.id)
+                    return
+
+            # ✅ LLAMAR A LA FUNCIÓN DE CONFIRMACIÓN
             await handle_motorizado_confirm_callback(call, id_motorolo, codigo_app)
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ *Error: Formato de callback inválido*",
+                parse_mode="Markdown"
+            )
+
         await bot.answer_callback_query(call.id)
         return
 
-    # Mantener los callbacks antiguos por compatibilidad
+    # ============================================================
+    # CALLBACKS ANTIGUOS (COMPATIBILIDAD)
+    # ============================================================
     if call.data.startswith('motorizado_select_'):
         temp_id = call.data.replace('motorizado_select_', '')
         await handle_motorizado_select_callback(call, temp_id)
@@ -273,6 +461,9 @@ async def handle_callback_query(call):
         await bot.answer_callback_query(call.id)
         return
 
+    # ============================================================
+    # RANGO
+    # ============================================================
     session = user_sessions.get(user_id)
     if not session:
         await bot.send_message(

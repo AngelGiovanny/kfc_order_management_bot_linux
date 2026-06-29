@@ -103,7 +103,7 @@ async def show_main_menu(bot, chat_id: int, store_code: str):
         types.KeyboardButton("🍗 Comanda"),
         types.KeyboardButton("🔗 Código asociado"),
         types.KeyboardButton("🖨️ Re-Impresión"),
-        types.KeyboardButton("🚚 Asignar Motorizado"),  # NUEVO BOTÓN
+        types.KeyboardButton("🚚 Asignar Motorizado"),
         types.KeyboardButton("📅 Auditoría por Rango"),
         types.KeyboardButton("🔄 Cambiar tienda"),
         types.KeyboardButton("❌ Salir")
@@ -1293,7 +1293,7 @@ async def handle_reprint_3attempts(bot, chat_id: int, store_code: str, reprint_t
 
 
 # ============================================================================
-# FUNCIONES PARA ASIGNACIÓN DE MOTORIZADO (AGREGADAS AL FINAL)
+# FUNCIONES PARA ASIGNACIÓN DE MOTORIZADO
 # ============================================================================
 
 # Diccionario global para almacenar estados de motorizado
@@ -1497,12 +1497,11 @@ async def handle_motorizado_document_search(bot, chat_id: int, documento: str, u
             nombre_completo = f"{nombres} {apellidos}".strip()
             btn_text = f"👤 {nombre_completo} - {empresa} ({tipo})"
 
-            # Usar solo el índice numérico como callback (SIN guiones, SIN letras)
             motorizado_temp[user_id]['temp_ids'][str(idx)] = {
                 'id_motorolo': id_motorolo,
                 'codigo_app': codigo_app
             }
-            callback_data = f"ms_{idx}"  # ms = motorizado_select
+            callback_data = f"ms_{idx}"
             markup.add(types.InlineKeyboardButton(btn_text, callback_data=callback_data))
 
         markup.add(types.InlineKeyboardButton("🔙 Cancelar", callback_data='menu_principal'))
@@ -1525,6 +1524,9 @@ async def handle_motorizado_document_search(bot, chat_id: int, documento: str, u
         )
 
 
+# ============================================================
+# ✅ FUNCIÓN CORREGIDA - handle_motorizado_select_callback
+# ============================================================
 async def handle_motorizado_select_callback(call, idx: str):
     """Maneja la selección de motorizado (PASO 3 - Confirmación)"""
     from telebot import types
@@ -1540,14 +1542,24 @@ async def handle_motorizado_select_callback(call, idx: str):
     logger.info(f"motorizado_temp keys: {list(motorizado_temp.keys())}")
 
     if user_id not in motorizado_temp:
-        await bot_instance.send_message(chat_id, "❌ *Sesión expirada*", parse_mode="Markdown")
+        await bot_instance.edit_message_text(
+            text="❌ *Sesión expirada*",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
         return
 
     logger.info(f"temp_ids disponibles: {list(motorizado_temp[user_id].get('temp_ids', {}).keys())}")
 
     temp_data = motorizado_temp[user_id].get('temp_ids', {}).get(idx)
     if not temp_data:
-        await bot_instance.send_message(chat_id, "❌ *Error: No se encontró el motorizado*", parse_mode="Markdown")
+        await bot_instance.edit_message_text(
+            text="❌ *Error: No se encontró el motorizado*",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
         return
 
     id_motorolo = temp_data['id_motorolo']
@@ -1564,11 +1576,23 @@ async def handle_motorizado_select_callback(call, idx: str):
             break
 
     if not motorizado_seleccionado:
-        await bot_instance.send_message(chat_id, "❌ Error: No se encontró el motorizado", parse_mode="Markdown")
+        await bot_instance.edit_message_text(
+            text="❌ Error: No se encontró el motorizado seleccionado",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
         return
 
+    # ✅ GUARDAR EN LA SESIÓN CORRECTAMENTE
     motorizado_temp[user_id]['selected_motorizado'] = motorizado_seleccionado
     motorizado_temp[user_id]['selected_id_motorolo'] = id_motorolo
+    # ✅ IMPORTANTE: Asegurar que store_code esté en la sesión
+    if 'store_code' not in motorizado_temp[user_id]:
+        motorizado_temp[user_id]['store_code'] = motorizado_temp[user_id].get('store_code')
+
+    logger.info(f"✅ Motorizado guardado en sesión: {motorizado_seleccionado[1]} {motorizado_seleccionado[2]}")
+    logger.info(f"✅ Sesión actual: {motorizado_temp[user_id].keys()}")
 
     nombres = motorizado_seleccionado[1] or ""
     apellidos = motorizado_seleccionado[2] or ""
@@ -1617,6 +1641,9 @@ async def handle_motorizado_select_callback(call, idx: str):
     )
 
 
+# ============================================================
+# ✅ FUNCIÓN CORREGIDA - handle_motorizado_confirm_callback
+# ============================================================
 async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app: str):
     """Ejecuta la asignación del motorizado (PASO 4 - Final)"""
     from telebot import types
@@ -1631,29 +1658,69 @@ async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app:
     logger.info(f"id_motorolo: {id_motorolo}")
     logger.info(f"codigo_app: {codigo_app}")
 
+    # Verificar sesión
     if user_id not in motorizado_temp:
-        await bot_instance.send_message(chat_id, "❌ *Sesión expirada*", parse_mode="Markdown")
+        await bot_instance.edit_message_text(
+            text="❌ *Sesión expirada*",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
         return
 
-    store_code = motorizado_temp[user_id]['store_code']
-    motorizado_seleccionado = motorizado_temp[user_id].get('selected_motorizado')
+    # ✅ OBTENER DATOS DE LA SESIÓN
+    session = motorizado_temp[user_id]
+    store_code = session.get('store_code')
+    motorizado_seleccionado = session.get('selected_motorizado')
+
+    logger.info(f"store_code: {store_code}")
+    logger.info(f"motorizado_seleccionado: {motorizado_seleccionado}")
+
+    if not store_code:
+        await bot_instance.edit_message_text(
+            text="❌ *Error: No se encontró la tienda*\n\n"
+                 f"Datos en sesión: {list(session.keys())}",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
+        return
 
     if not motorizado_seleccionado:
-        await bot_instance.send_message(chat_id, "❌ *Error interno*", parse_mode="Markdown")
+        await bot_instance.edit_message_text(
+            text="❌ *Error: No se encontró el motorizado seleccionado*\n\n"
+                 f"Verifique que haya seleccionado un motorizado correctamente.",
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
+        # Limpiar sesión si hay error
+        if user_id in motorizado_temp:
+            del motorizado_temp[user_id]
         return
 
     try:
+        # Mostrar mensaje de procesamiento
         await bot_instance.edit_message_text(
-            text="⏳ *Procesando asignación...*",
+            text="⏳ *Procesando asignación...*\n\n"
+                 f"📦 Orden: `{codigo_app}`\n"
+                 f"👤 Motorizado: `{motorizado_seleccionado[1]} {motorizado_seleccionado[2]}`",
             chat_id=chat_id,
             message_id=message_id,
             parse_mode="Markdown"
         )
 
-        connection = db_manager.get_connection(store_code)
+        # ✅ CONEXIÓN DIRECTA A BD
+        from core.os_detector import OSDetector
+
+        os_type, _ = OSDetector.detect_os(store_code, quick=True)
+        logger.info(f"Conectando a {store_code} con OS: {os_type}")
+
+        connection = db_manager.get_connection(store_code, os_type)
         if not connection:
             await bot_instance.edit_message_text(
-                text="❌ *Error de conexión*",
+                text="❌ *Error de conexión a la base de datos*\n\n"
+                     f"No se pudo conectar a la tienda {store_code}",
                 chat_id=chat_id,
                 message_id=message_id,
                 parse_mode="Markdown"
@@ -1662,42 +1729,57 @@ async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app:
 
         cursor = connection.cursor()
 
-        # Verificar la orden antes de actualizar
-        cursor.execute("SELECT codigo_app, IDMotorolo FROM Cabecera_App WHERE codigo_app = ?", (codigo_app,))
+        # ✅ PASO 1: VERIFICAR QUE LA ORDEN EXISTE
+        logger.info(f"Verificando orden: {codigo_app}")
+        cursor.execute(
+            "SELECT codigo_app, IDMotorolo FROM Cabecera_App WHERE codigo_app = ?",
+            (codigo_app,)
+        )
         orden_actual = cursor.fetchone()
 
         if not orden_actual:
             await bot_instance.edit_message_text(
-                text=f"❌ *Error:* No se encontró la orden `{codigo_app}`",
+                text=f"❌ *Error:* No se encontró la orden `{codigo_app}`\n\n"
+                     f"Verifique el código e intente nuevamente.",
                 chat_id=chat_id,
                 message_id=message_id,
                 parse_mode="Markdown"
             )
             cursor.close()
             connection.close()
+            if user_id in motorizado_temp:
+                del motorizado_temp[user_id]
             return
 
-        logger.info(f"Orden actual: IDMotorolo = {orden_actual[1] if orden_actual[1] else 'NULL'}")
+        logger.info(f"Orden encontrada: IDMotorolo actual = {orden_actual[1] if orden_actual[1] else 'NULL'}")
 
-        # Ejecutar UPDATE
-        cursor.execute("UPDATE Cabecera_App SET IDMotorolo = ? WHERE codigo_app = ?", (id_motorolo, codigo_app))
+        # ✅ PASO 2: EJECUTAR UPDATE
+        update_query = "UPDATE Cabecera_App SET IDMotorolo = ? WHERE codigo_app = ?"
+        cursor.execute(update_query, (id_motorolo, codigo_app))
         connection.commit()
 
-        logger.info(f"Filas afectadas: {cursor.rowcount}")
+        filas_afectadas = cursor.rowcount
+        logger.info(f"Filas afectadas: {filas_afectadas}")
 
-        if cursor.rowcount > 0:
+        cursor.close()
+        connection.close()
+
+        # ✅ PASO 3: VERIFICAR RESULTADO
+        if filas_afectadas > 0:
             nombres = motorizado_seleccionado[1] or ""
             apellidos = motorizado_seleccionado[2] or ""
             empresa = motorizado_seleccionado[3] or "N/A"
+            telefono = motorizado_seleccionado[5] or "N/A"
 
             mensaje = f"""
-✅ *¡MOTORIZADO ASIGNADO!*
+✅ *¡MOTORIZADO ASIGNADO CON ÉXITO!*
 
 📦 *Orden:* `{codigo_app}`
 👤 *Motorizado:* {nombres} {apellidos}
 🏢 *Empresa:* {empresa}
+📞 *Teléfono:* {telefono}
 
-✅ Actualización completada.
+✅ La orden ha sido actualizada correctamente.
 """
             usage_logger.log_action(
                 user_id=user_id,
@@ -1707,17 +1789,30 @@ async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app:
                 details=f"Orden: {codigo_app}, Motorizado ID: {id_motorolo}"
             )
         else:
-            mensaje = f"❌ *Error:* No se pudo actualizar la orden `{codigo_app}`.\n\nLa orden no existe o ya está entregada."
+            mensaje = f"""
+⚠️ *NO SE PUDO ACTUALIZAR LA ORDEN*
 
-        cursor.close()
-        connection.close()
+📦 *Orden:* `{codigo_app}`
+👤 *Motorizado:* {motorizado_seleccionado[1]} {motorizado_seleccionado[2]}
 
+**Posibles causas:**
+• La orden ya fue entregada
+• La orden no existe en la base de datos
+• El ID del motorizado no es válido
+
+Verifique el estado de la orden e intente nuevamente.
+"""
+
+        # Limpiar sesión temporal
         if user_id in motorizado_temp:
             del motorizado_temp[user_id]
 
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🚚 Nueva Asignación", callback_data='asignar_motorizado'))
-        markup.add(types.InlineKeyboardButton("🏠 Menú Principal", callback_data='menu_principal'))
+        # Mostrar mensaje final con opciones
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🚚 Nueva Asignación", callback_data='asignar_motorizado'),
+            types.InlineKeyboardButton("🏠 Menú Principal", callback_data='menu_principal')
+        )
 
         await bot_instance.edit_message_text(
             text=mensaje,
@@ -1728,10 +1823,16 @@ async def handle_motorizado_confirm_callback(call, id_motorolo: str, codigo_app:
         )
 
     except Exception as e:
-        logger.error(f"Error en handle_motorizado_confirm_callback: {e}")
+        logger.error(f"Error en handle_motorizado_confirm_callback: {e}", exc_info=True)
+        error_msg = str(e)[:200]
         await bot_instance.edit_message_text(
-            text=f"❌ *Error:* `{str(e)[:200]}`",
+            text=f"❌ *Error al asignar motorizado:*\n\n"
+                 f"`{error_msg}`\n\n"
+                 f"Por favor, verifique los logs para más detalles.",
             chat_id=chat_id,
             message_id=message_id,
             parse_mode="Markdown"
         )
+        # Limpiar sesión en caso de error
+        if user_id in motorizado_temp:
+            del motorizado_temp[user_id]
